@@ -69,6 +69,46 @@ pip install -r requirements-cuda118.txt
 
 ---
 
+## 模型准备
+
+两个模型体积较大，**不包含在本仓库中**，需手动下载后放置到项目根目录。
+
+### faster-whisper-large-v3（约 3 GB）
+
+| 来源 | 地址 |
+|---|---|
+| Hugging Face | https://huggingface.co/Systran/faster-whisper-large-v3 |
+| HF 镜像（国内） | https://hf-mirror.com/Systran/faster-whisper-large-v3 |
+| ModelScope | https://modelscope.cn/models/Systran/faster-whisper-large-v3 |
+
+### HY-MT1.5-7B-GPTQ-Int4（约 4.5 GB）
+
+| 来源 | 地址 |
+|---|---|
+| Hugging Face | https://huggingface.co/Tencent-Hunyuan/HY-MT1.5-7B-GPTQ-Int4 |
+| HF 镜像（国内） | https://hf-mirror.com/Tencent-Hunyuan/HY-MT1.5-7B-GPTQ-Int4 |
+| ModelScope | https://modelscope.cn/models/Tencent-Hunyuan/HY-MT1.5-7B-GPTQ-Int4 |
+
+### 下载方式
+
+推荐使用 `huggingface_hub` 命令行工具：
+
+```powershell
+pip install huggingface_hub
+huggingface-cli download Systran/faster-whisper-large-v3 --local-dir ./faster-whisper-large-v3
+huggingface-cli download Tencent-Hunyuan/HY-MT1.5-7B-GPTQ-Int4 --local-dir ./HY-MT1.5-7B-GPTQ-Int4
+```
+
+国内网络建议先设置镜像端点：
+
+```powershell
+$env:HF_ENDPOINT = "https://hf-mirror.com"
+huggingface-cli download Systran/faster-whisper-large-v3 --local-dir ./faster-whisper-large-v3
+huggingface-cli download Tencent-Hunyuan/HY-MT1.5-7B-GPTQ-Int4 --local-dir ./HY-MT1.5-7B-GPTQ-Int4
+```
+
+---
+
 ## 使用步骤
 
 ### 第一步：准备音频文件
@@ -177,8 +217,8 @@ model_path = "./faster-whisper-small"    # 约 500MB 显存
 ├── requirements-cuda118.txt        # 依赖（CUDA 11.8）
 ├── transcription.json              # 识别结果（运行 audio.py 后生成）
 ├── final_chinese_subtitles.srt     # 中文字幕（运行 translate.py 后生成）
-├── faster-whisper-large-v3/        # Whisper 本地模型文件
-└── HY-MT1.5-7B-GPTQ-Int4/         # 混元翻译模型文件
+├── faster-whisper-large-v3/        # Whisper 本地模型（不含于仓库，见"模型准备"）
+└── HY-MT1.5-7B-GPTQ-Int4/         # 混元翻译模型（不含于仓库，见"模型准备"）
 ```
 
 ---
