@@ -1,0 +1,18 @@
+# CUDA 12.x (RTX 40xx / 30xx 已升级至 CUDA 12 驱动)
+# 安装命令: pip install -r requirements.txt
+#
+--index-url https://download.pytorch.org/whl/cu124
+--extra-index-url https://pypi.org/simple
+
+# Core runtime
+torch==2.11.0
+transformers==4.56.0
+optimum==1.27.0
+gptqmodel==4.2.5
+accelerate>=0.34.0
+
+# ASR
+faster-whisper
+
+# Utilities
+tqdm

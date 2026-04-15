@@ -1,0 +1,20 @@
+# 本地模型权重（体积过大，不纳入版本控制）
+faster-whisper-large-v3/
+HY-MT1.5-7B-GPTQ-Int4/
+
+# 运行时产物
+transcription.json
+final_chinese_subtitles.srt
+*.mp3
+*.mp4
+*.wav
+
+# Python 虚拟环境
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# 系统文件
+.DS_Store
+Thumbs.db

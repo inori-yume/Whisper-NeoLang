@@ -1,0 +1,18 @@
+# CUDA 11.8 (旧版驱动 / GTX 10xx~30xx 未升级驱动)
+# 安装命令: pip install -r requirements-cuda118.txt
+#
+--index-url https://download.pytorch.org/whl/cu118
+--extra-index-url https://pypi.org/simple
+
+# Core runtime
+torch==2.11.0
+transformers==4.56.0
+optimum==1.27.0
+gptqmodel==4.2.5
+accelerate>=0.34.0
+
+# ASR
+faster-whisper
+
+# Utilities
+tqdm
