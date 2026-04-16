@@ -1,0 +1,125 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+:root {
+    --bs-dark-rgb: 33, 37, 41;
+    --bs-body-bg-rgb: 26, 29, 33;
+    --primary-glow: rgba(88, 101, 242, 0.3);
+    --secondary-glow: rgba(235, 69, 158, 0.3);
+    --border-color: rgba(255, 255, 255, 0.1);
+}
+
+body {
+    font-family: 'Noto Sans SC', "Microsoft YaHei UI", sans-serif;
+    background-color: rgb(var(--bs-body-bg-rgb));
+    background-image:
+        radial-gradient(at 27% 37%, hsla(215, 98%, 61%, 0.1) 0px, transparent 50%),
+        radial-gradient(at 97% 21%, hsla(125, 98%, 72%, 0.1) 0px, transparent 50%),
+        radial-gradient(at 52% 99%, hsla(355, 98%, 71%, 0.1) 0px, transparent 50%),
+        radial-gradient(at 10% 29%, hsla(256, 96%, 68%, 0.1) 0px, transparent 50%),
+        radial-gradient(at 97% 96%, hsla(38, 60%, 74%, 0.1) 0px, transparent 50%),
+        radial-gradient(at 33% 50%, hsla(222, 67%, 73%, 0.1) 0px, transparent 50%),
+        radial-gradient(at 79% 53%, hsla(343, 68%, 79%, 0.1) 0px, transparent 50%);
+    background-attachment: fixed;
+}
+
+.card {
+    background-color: rgba(var(--bs-dark-rgb), 0.6);
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.card-header {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.form-control, .form-select {
+    background-color: rgba(var(--bs-body-bg-rgb), 0.7);
+    color: #e9ecef;
+    border-color: var(--border-color);
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: rgba(var(--bs-body-bg-rgb), 0.9);
+    color: #e9ecef;
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 .25rem rgba(13,110,253,.2);
+}
+
+.btn-outline-secondary {
+    border-color: var(--border-color);
+}
+
+.console {
+    background: rgba(var(--bs-body-bg-rgb), 0.8);
+    color: #adb5bd;
+    font-family: "Consolas", monospace;
+    font-size: 0.85rem;
+    height: 250px;
+    overflow-y: scroll;
+    border-radius: .375rem;
+    padding: .75rem;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    border: 1px solid var(--border-color);
+}
+
+.preview-table-wrap {
+    height: 400px;
+    overflow-y: auto;
+}
+
+.modal-content {
+    background-color: rgba(30, 33, 37, 0.85);
+    border: 1px solid var(--border-color);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+}
+
+.main-title {
+    font-weight: 700;
+    text-shadow: 0 0 15px var(--primary-glow);
+}
+
+.btn-primary {
+    box-shadow: 0 0 20px var(--primary-glow);
+}
+.btn-warning {
+    box-shadow: 0 0 20px var(--secondary-glow);
+}
+
+.progress, .progress-bar {
+    border-radius: 4px;
+}
+
+.sticky-top {
+    background: rgba(var(--bs-dark-rgb), 0.85) !important;
+    backdrop-filter: blur(5px);
+}
+
+.form-control[readonly] {
+    cursor: default;
+    background-color: rgba(var(--bs-body-bg-rgb), 0.5);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+}

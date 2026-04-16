@@ -16,3 +16,8 @@ faster-whisper
 
 # Utilities
 tqdm
+
+# Web GUI
+Flask
+Flask-SocketIO
+simple-websocket

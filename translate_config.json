@@ -1,0 +1,22 @@
+{
+  "terminology": [
+    {"source": "Eco",      "target": "Eco"},
+    {"source": "Rush",     "target": "Rush"},
+    {"source": "Save",     "target": "Save"},
+    {"source": "Major",    "target": "Major"},
+    {"source": "Site",     "target": "Site"},
+    {"source": "CT",       "target": "CT"},
+    {"source": "T",        "target": "T"},
+    {"source": "AWP",      "target": "AWP"},
+    {"source": "AK",       "target": "AK"},
+    {"source": "M4",       "target": "M4"},
+    {"source": "Molotov",  "target": "火"},
+    {"source": "Flash",    "target": "Flash"},
+    {"source": "Smoke",    "target": "Smoke"},
+    {"source": "Nuke",     "target": "Nuke"},
+    {"source": "Dust2",    "target": "Dust2"},
+    {"source": "Inferno",  "target": "Inferno"},
+    {"source": "Mirage",   "target": "Mirage"}
+  ],
+  "prompt_template": "参考下面的翻译：\n{terms}\n\n将以下文本翻译为中文，注意只需要输出翻译后的结果，不要额外解释：\n{text}"
+}

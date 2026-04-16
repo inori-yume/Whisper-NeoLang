@@ -1,0 +1,76 @@
+{
+  "whisper_path": "D:/lesson/translate/faster-whisper-large-v3",
+  "hy_path": "D:/lesson/translate/HY-MT1.5-7B-GPTQ-Int4",
+  "audio_file": "D:/lesson/translate/transcription.json",
+  "language": "pt",
+  "terminology": [
+    {
+      "source": "Eco",
+      "target": "Eco"
+    },
+    {
+      "source": "Rush",
+      "target": "Rush"
+    },
+    {
+      "source": "Save",
+      "target": "Save"
+    },
+    {
+      "source": "Major",
+      "target": "Major"
+    },
+    {
+      "source": "Site",
+      "target": "Site"
+    },
+    {
+      "source": "CT",
+      "target": "CT"
+    },
+    {
+      "source": "T",
+      "target": "T"
+    },
+    {
+      "source": "AWP",
+      "target": "AWP"
+    },
+    {
+      "source": "AK",
+      "target": "AK"
+    },
+    {
+      "source": "M4",
+      "target": "M4"
+    },
+    {
+      "source": "Molotov",
+      "target": "Molotov"
+    },
+    {
+      "source": "Flash",
+      "target": "Flash"
+    },
+    {
+      "source": "Smoke",
+      "target": "Smoke"
+    },
+    {
+      "source": "Nuke",
+      "target": "Nuke"
+    },
+    {
+      "source": "Dust2",
+      "target": "Dust2"
+    },
+    {
+      "source": "Inferno",
+      "target": "Inferno"
+    },
+    {
+      "source": "Mirage",
+      "target": "Mirage"
+    }
+  ]
+}

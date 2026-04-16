@@ -18,9 +18,26 @@ logging.getLogger("torch._dynamo").setLevel(logging.CRITICAL)
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 # --- 配置 ---
-model_path = "./HY-MT1.5-7B-GPTQ-Int4"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_MODEL_PATH = "./HY-MT1.5-7B-GPTQ-Int4"
 input_json = "transcription.json"
 output_srt = "final_chinese_subtitles.srt"
+
+def _resolve_model_path() -> str:
+    """优先读取 web_config.json 中前端保存的 hy_path，未配置时回退默认值。"""
+    web_cfg = os.path.join(BASE_DIR, "web_config.json")
+    if os.path.exists(web_cfg):
+        try:
+            with open(web_cfg, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            hy_path = (cfg.get("hy_path") or "").strip()
+            if hy_path:
+                return hy_path
+        except Exception:
+            pass
+    return DEFAULT_MODEL_PATH
+
+model_path = _resolve_model_path()
 
 print(f"正在加载模型: {model_path}")
 
@@ -45,18 +62,37 @@ except Exception as e:
     print("若显存不足，可改用 HY-MT1.5-1.8B-GPTQ-Int4 版本。")
     sys.exit(1)
 
-# CS2 专有术语映射表：确保模型在翻译时保留这些词的原文拼写
-_CS2_TERM_HINT = "\n".join(f"{t} 翻译成 {t}" for t in [
-    "Eco", "Rush", "Save", "Major", "Site", "CT", "T",
-    "Nuke", "Dust2", "Inferno", "Mirage", "Overpass", "Ancient", "Anubis",
-    "AWP", "AK", "M4", "Deagle", "Molotov", "Flash", "Smoke",
-])
+# 默认 CS2 专有术语映射表（当 translate_config.json 不存在时使用）
+_DEFAULT_TERMINOLOGY = [
+    {"source": t, "target": t} for t in [
+        "Eco", "Rush", "Save", "Major", "Site", "CT", "T",
+        "Nuke", "Dust2", "Inferno", "Mirage", "Overpass", "Ancient", "Anubis",
+        "AWP", "AK", "M4", "Deagle", "Molotov", "Flash", "Smoke",
+    ]
+]
+_DEFAULT_PROMPT_TEMPLATE = (
+    "参考下面的翻译：\n{terms}\n\n"
+    "将以下文本翻译为中文，注意只需要输出翻译后的结果，不要额外解释：\n{text}"
+)
+
+def _load_translate_config() -> dict:
+    """从 translate_config.json 读取术语表和 Prompt 模板，文件不存在时返回空字典。"""
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "translate_config.json")
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
 
 def translate_line(text):
-    prompt_content = (
-        f"参考下面的翻译：\n{_CS2_TERM_HINT}\n\n"
-        f"将以下文本翻译为中文，注意只需要输出翻译后的结果，不要额外解释：\n{text}"
-    )
+    cfg = _load_translate_config()
+    terminology = cfg.get('terminology', _DEFAULT_TERMINOLOGY)
+    prompt_template = cfg.get('prompt_template', _DEFAULT_PROMPT_TEMPLATE)
+
+    terms_text = "\n".join(f"{t['source']} 翻译成 {t['target']}" for t in terminology)
+    prompt_content = prompt_template.format(terms=terms_text, text=text)
     messages = [{"role": "user", "content": prompt_content}]
 
     input_ids = tokenizer.apply_chat_template(
