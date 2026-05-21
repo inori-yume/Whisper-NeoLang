@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="zh-CN" data-bs-theme="dark">
 <head>
     <meta charset="utf-8">
@@ -10,16 +10,17 @@
 </head>
 <body>
 <div class="container py-4 px-4">
-
-    <!-- 顶栏 -->
     <div class="d-flex align-items-center justify-content-between pb-3 mb-4">
         <div class="d-flex align-items-center gap-3">
             <i class="bi bi-translate fs-2 text-primary"></i>
             <span class="fs-4 main-title">Whisper-HY 本地翻译工具</span>
         </div>
-        <div class="d-flex gap-2">
-            <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#langModal">
-                <i class="bi bi-globe me-1"></i>语言 &amp; 识别
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#modelPathModal">
+                <i class="bi bi-folder2-open me-1"></i>模型路径
+            </button>
+            <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#apiModal">
+                <i class="bi bi-cloud me-1"></i>硅基流动 API
             </button>
             <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#termModal">
                 <i class="bi bi-list-check me-1"></i>术语表
@@ -27,88 +28,96 @@
             <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#promptModal">
                 <i class="bi bi-chat-square-text me-1"></i>Prompt
             </button>
+            <button class="btn btn-sm btn-outline-success" id="btn-env-check" data-bs-toggle="modal" data-bs-target="#envCheckModal">
+                <i class="bi bi-shield-check me-1"></i>环境自检
+            </button>
+            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#downloadModelModal">
+                <i class="bi bi-cloud-download me-1"></i>下载模型
+            </button>
         </div>
     </div>
-
     <div class="row g-4">
-        <!-- 左栏：控制 -->
         <div class="col-lg-5">
             <div class="d-flex flex-column gap-4">
-                <!-- 模型路径 -->
                 <div class="card">
-                    <div class="card-header fw-semibold"><i class="bi bi-folder2-open me-2"></i>模型路径</div>
-                    <div class="card-body">
-                        <div class="mb-2">
-                            <label class="form-label small mb-1">Whisper 模型</label>
-                            <div class="input-group input-group-sm">
-                                <input type="text" class="form-control" id="whisperPath" readonly placeholder="选择文件夹">
-                                <button class="btn btn-outline-secondary" onclick="browsePath('whisperPath','dir')"><i class="bi bi-folder2-open"></i></button>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="form-label small mb-1">混元翻译模型</label>
-                            <div class="input-group input-group-sm">
-                                <input type="text" class="form-control" id="hyPath" readonly placeholder="选择文件夹">
-                                <button class="btn btn-outline-secondary" onclick="browsePath('hyPath','dir')"><i class="bi bi-folder2-open"></i></button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 任务 -->
-                <div class="card">
-                    <div class="card-header fw-semibold"><i class="bi bi-play-circle me-2"></i>任务流程</div>
+                    <div class="card-header fw-semibold"><i class="bi bi-mic me-2"></i>语音识别 (ASR)</div>
                     <div class="card-body">
                         <div class="mb-3">
-                            <label class="form-label small mb-1">1. 选择音频文件</label>
-                            <div class="input-group input-group-sm">
-                                <input type="text" class="form-control" id="audioFile" readonly placeholder="选择音频文件">
-                                <button class="btn btn-outline-secondary" onclick="browsePath('audioFile','file')"><i class="bi bi-file-earmark-music"></i></button>
+                            <label class="form-label small mb-1">Whisper 模型</label>
+                            <div class="d-flex gap-2 mb-1">
+                                <select class="form-select form-select-sm flex-grow-1" id="whisperModelSelect">
+                                    <option value="">― 扫描到的模型 ―</option>
+                                </select>
+                                <button class="btn btn-sm btn-outline-secondary" id="btn-refresh-models" title="重新扫描">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
                             </div>
                         </div>
-                        <div class="d-grid mb-3">
-                            <button id="btn-asr" class="btn btn-sm btn-primary"><i class="bi bi-mic me-1"></i>开始语音识别</button>
+                        <div class="mb-3">
+                            <label class="form-label small mb-1">运行设备</label>
+                            <div class="btn-group btn-group-sm w-100" role="group">
+                                <input type="radio" class="btn-check" name="whisperDevice" id="device-gpu" value="cuda" autocomplete="off" checked>
+                                <label class="btn btn-outline-success" for="device-gpu"><i class="bi bi-gpu-card me-1"></i>GPU 模式</label>
+                                <input type="radio" class="btn-check" name="whisperDevice" id="device-cpu" value="cpu" autocomplete="off">
+                                <label class="btn btn-outline-warning" for="device-cpu"><i class="bi bi-cpu me-1"></i>CPU 模式</label>
+                            </div>
                         </div>
-                        <hr class="border-light opacity-25">
-                        <div class="mb-2">
-                            <label class="form-label small mb-1">或: 从已有 JSON 翻译</label>
+                        <div class="mb-3">
+                            <label class="form-label small mb-1">识别语言</label>
+                            <select class="form-select form-select-sm" id="setting-language">
+                                <option value="pt">葡萄牙语 (pt)</option>
+                                <option value="en">英语 (en)</option>
+                                <option value="zh">中文 (zh)</option>
+                                <option value="ja">日语 (ja)</option>
+                                <option value="ko">韩语 (ko)</option>
+                                <option value="es">西班牙语 (es)</option>
+                                <option value="fr">法语 (fr)</option>
+                                <option value="de">德语 (de)</option>
+                                <option value="ru">俄语 (ru)</option>
+                                <option value="ar">阿拉伯语 (ar)</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label small mb-1">音频文件</label>
                             <div class="input-group input-group-sm">
-                                <input type="text" class="form-control" id="jsonFile" readonly placeholder="选择 JSON 文件（自动预览）">
-                                <button class="btn btn-outline-secondary" onclick="browsePath('jsonFile','json')"><i class="bi bi-file-earmark-code"></i></button>
+                                <input type="text" class="form-control" id="audioFile" readonly placeholder="选择音频文件">
+                                <button class="btn btn-outline-secondary" id="btn-browse-audio"><i class="bi bi-file-earmark-music"></i></button>
                             </div>
                         </div>
                         <div class="d-grid">
-                            <button id="btn-translate-json" class="btn btn-sm btn-warning"><i class="bi bi-translate me-1"></i>翻译此 JSON</button>
+                            <button id="btn-asr" class="btn btn-primary"><i class="bi bi-mic me-1"></i>开始语音识别</button>
                         </div>
                     </div>
                 </div>
-
-                 <!-- 快速翻译 -->
                 <div class="card">
-                    <div class="card-header fw-semibold"><i class="bi bi-send me-2"></i>快速翻译</div>
+                    <div class="card-header fw-semibold"><i class="bi bi-translate me-2"></i>翻译</div>
                     <div class="card-body">
-                        <div>
-                            <label class="form-label small mb-1">输入文本</label>
-                            <textarea class="form-control form-control-sm mb-2" id="direct-input" rows="2"></textarea>
+                        <div class="mb-3">
+                            <label class="form-label small mb-1">翻译引擎</label>
+                            <div class="btn-group btn-group-sm w-100" role="group">
+                                <input type="radio" class="btn-check" name="translateMode" id="mode-local" value="local" autocomplete="off" checked>
+                                <label class="btn btn-outline-primary" for="mode-local"><i class="bi bi-hdd me-1"></i>本地模型</label>
+                                <input type="radio" class="btn-check" name="translateMode" id="mode-api" value="api" autocomplete="off">
+                                <label class="btn btn-outline-info" for="mode-api"><i class="bi bi-cloud me-1"></i>硅基流动 API</label>
+                            </div>
+                            <div class="form-text mt-1" id="translate-mode-hint">使用本地混元模型翻译</div>
                         </div>
-                        <div>
-                            <label class="form-label small mb-1">翻译结果</label>
-                            <textarea class="form-control form-control-sm" id="direct-output" rows="2" readonly></textarea>
+                        <div class="mb-3">
+                            <label class="form-label small mb-1">识别结果 JSON</label>
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" id="jsonFile" readonly placeholder="选择 JSON 文件（自动预览）">
+                                <button class="btn btn-outline-secondary" id="btn-browse-json"><i class="bi bi-file-earmark-code"></i></button>
+                            </div>
                         </div>
-                         <div class="d-grid mt-2">
-                            <button id="btn-direct-translate" class="btn btn-sm btn-info">
-                                <i class="bi bi-arrow-right-circle me-1"></i> 翻译
-                            </button>
+                        <div class="d-grid">
+                            <button id="btn-translate-json" class="btn btn-warning"><i class="bi bi-translate me-1"></i>翻译 JSON 字幕</button>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-
-        <!-- 右栏：日志 + 结果 -->
         <div class="col-lg-7">
             <div class="d-flex flex-column gap-4">
-                <!-- 日志 + 进度 -->
                 <div class="card">
                     <div class="card-header fw-semibold"><i class="bi bi-terminal me-2"></i>运行日志</div>
                     <div class="card-body">
@@ -119,8 +128,6 @@
                         <small id="progress-text" class="text-muted d-block mt-1"></small>
                     </div>
                 </div>
-
-                <!-- 原文 + 译文合并表格 -->
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center fw-semibold">
                         <span><i class="bi bi-table me-2"></i>结果预览</span>
@@ -129,17 +136,8 @@
                     <div class="card-body p-0">
                         <div class="preview-table-wrap">
                             <table class="table table-sm table-dark table-striped table-hover mb-0 align-middle">
-                                <thead class="sticky-top">
-                                    <tr>
-                                        <th style="width:40px">#</th>
-                                        <th style="width:100px">时间轴</th>
-                                        <th>原文</th>
-                                        <th>译文</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="preview-tbody">
-                                    <tr><td colspan="4" class="text-center text-muted py-5">暂无数据</td></tr>
-                                </tbody>
+                                <thead class="sticky-top"><tr><th style="width:40px">#</th><th style="width:100px">时间轴</th><th>原文</th><th>译文</th></tr></thead>
+                                <tbody id="preview-tbody"><tr><td colspan="4" class="text-center text-muted py-5">暂无数据</td></tr></tbody>
                             </table>
                         </div>
                     </div>
@@ -148,90 +146,77 @@
         </div>
     </div>
 </div>
-
-<!-- ===== 语言 & 识别设置 Modal ===== -->
-<div class="modal fade" id="langModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-globe me-2"></i>语言 &amp; 识别设置</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <label class="form-label">识别源语言</label>
-                    <select class="form-select" id="setting-language">
-                        <option value="pt">葡萄牙语 (pt)</option>
-                        <option value="en">英语 (en)</option>
-                        <option value="zh">中文 (zh)</option>
-                        <option value="ja">日语 (ja)</option>
-                        <option value="ko">韩语 (ko)</option>
-                        <option value="es">西班牙语 (es)</option>
-                        <option value="fr">法语 (fr)</option>
-                        <option value="de">德语 (de)</option>
-                        <option value="ru">俄语 (ru)</option>
-                        <option value="ar">阿拉伯语 (ar)</option>
-                    </select>
-                    <div class="form-text">Whisper 将使用此语言进行语音识别。</div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="saveLangSettings()">保存</button>
-            </div>
+<div class="modal fade" id="modelPathModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-folder2-open me-2"></i>模型路径配置</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div class="mb-3"><label class="form-label">Whisper 模型路径</label><div class="input-group input-group-sm"><input type="text" class="form-control" id="cfg-whisperPath" placeholder="选择 Whisper 模型文件夹" readonly><button class="btn btn-outline-secondary" id="btn-browse-cfg-whisper"><i class="bi bi-folder2-open"></i></button></div><div class="form-text">也可在语音识别面板通过下拉菜单选择。</div></div>
+            <div class="mb-3"><label class="form-label">混元翻译模型路径</label><div class="input-group input-group-sm"><input type="text" class="form-control" id="cfg-hyPath" placeholder="选择混元模型文件夹" readonly><button class="btn btn-outline-secondary" id="btn-browse-cfg-hy"><i class="bi bi-folder2-open"></i></button></div><div class="form-text">本地翻译模式时使用。</div></div>
         </div>
-    </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button><button type="button" class="btn btn-primary" id="btn-save-model-paths">保存路径</button></div>
+    </div></div>
 </div>
-
-<!-- ===== 术语表 Modal ===== -->
+<div class="modal fade" id="apiModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-cloud me-2"></i>硅基流动 API 配置</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div class="mb-3"><label class="form-label">API Key</label><input type="password" class="form-control form-control-sm" id="sfApiKey" placeholder="sk-..." autocomplete="off"><div class="form-text">从 <a href="https://cloud.siliconflow.cn" target="_blank">硅基流动控制台</a> 获取。</div></div>
+            <div class="mb-3"><label class="form-label">翻译模型</label><select class="form-select form-select-sm" id="sfModel"><option value="tencent/Hunyuan-MT-7B">Hunyuan-MT-7B（免费）</option><option value="tencent/Hunyuan-A13B-Instruct">Hunyuan-A13B-Instruct（收费）</option></select><div class="form-text" id="sf-model-hint">混元机器翻译专用模型，适合字幕翻译场景。</div></div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button><button type="button" class="btn btn-info" id="btn-save-api">保存 API 设置</button></div>
+    </div></div>
+</div>
 <div class="modal fade modal-xl" id="termModal" tabindex="-1">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-list-check me-2"></i>术语表管理</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <p class="text-muted small">术语表中的词汇会注入翻译 Prompt，此处设置“原文 → 译文”的映射，若保持原文不变则两列填写相同。</p>
-                <div class="table-responsive" style="max-height: 60vh;">
-                    <table class="table table-dark table-bordered table-sm" id="term-table">
-                        <thead><tr><th>原文（source）</th><th>译文（target）</th><th style="width:50px"></th></tr></thead>
-                        <tbody id="term-tbody"></tbody>
-                    </table>
-                </div>
-                <button class="btn btn-sm btn-outline-success mt-2" onclick="addTermRow()"><i class="bi bi-plus-lg me-1"></i>添加术语</button>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-warning" onclick="saveTerminology()">保存术语表</button>
-            </div>
+    <div class="modal-dialog modal-xl modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-list-check me-2"></i>术语表管理</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <p class="text-muted small">术语表中的词汇会注入翻译 Prompt，此处设置"原文 → 译文"的映射。</p>
+            <div class="table-responsive" style="max-height:60vh;"><table class="table table-dark table-bordered table-sm" id="term-table"><thead><tr><th>原文</th><th>译文</th><th style="width:50px"></th></tr></thead><tbody id="term-tbody"></tbody></table></div>
+            <button class="btn btn-sm btn-outline-success mt-2" onclick="addTermRow()"><i class="bi bi-plus-lg me-1"></i>添加术语</button>
         </div>
-    </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="button" class="btn btn-warning" id="btn-save-terminology">保存术语表</button></div>
+    </div></div>
 </div>
-
-<!-- ===== Prompt 编辑 Modal ===== -->
 <div class="modal fade" id="promptModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-chat-square-text me-2"></i>Prompt 模板</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+    <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-chat-square-text me-2"></i>Prompt 模板</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <p class="text-muted small">可用变量：<code>{terms}</code>（术语表）、<code>{text}</code>（待翻译文本）。</p>
+            <textarea class="form-control" id="prompt-editor" rows="10" style="font-family:Consolas,monospace;font-size:.9rem;"></textarea>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-outline-danger btn-sm me-auto" id="btn-reset-prompt">恢复默认</button><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button><button type="button" class="btn btn-primary" id="btn-save-prompt">保存</button></div>
+    </div></div>
+</div>
+<div class="modal fade modal-xl" id="downloadModelModal" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-cloud-download me-2"></i>Whisper 模型下载</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+            <div class="d-flex align-items-center gap-2 mb-3">
+                <label class="form-label mb-0 text-nowrap small"><i class="bi bi-hdd-network me-1"></i>镜像源：</label>
+                <input type="text" class="form-control form-control-sm" id="hf-mirror-input" value="https://hf-mirror.com" style="max-width:300px">
+                <span class="text-muted small">（默认使用 hf-mirror.com 加速下载）</span>
             </div>
-            <div class="modal-body">
-                <p class="text-muted small">
-                    可用变量：<code>{terms}</code>（术语表）、<code>{text}</code>（待翻译文本）。修改后立即生效于之后的翻译任务。
-                </p>
-                <textarea class="form-control" id="prompt-editor" rows="10" style="font-family: Consolas, monospace; font-size: .9rem;"></textarea>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-outline-danger btn-sm me-auto" onclick="resetPrompt()">恢复默认</button>
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" onclick="savePrompt()">保存</button>
+            <div id="download-model-list">
+                <div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>加载中...</div>
             </div>
         </div>
-    </div>
+        <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button></div>
+    </div></div>
 </div>
-
+<div class="modal fade" id="envCheckModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered"><div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title"><i class="bi bi-shield-check me-2"></i>环境自检</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+        <div class="modal-body">
+            <div id="env-check-results" class="d-flex flex-column gap-2">
+                <div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>正在检测环境...</div>
+            </div>
+        </div>
+        <div class="modal-footer"><button type="button" class="btn btn-outline-success btn-sm" id="btn-rerun-env-check"><i class="bi bi-arrow-clockwise me-1"></i>重新检测</button><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button></div>
+    </div></div>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <script src="/static/app.js"></script>

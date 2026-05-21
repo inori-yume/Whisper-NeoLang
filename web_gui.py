@@ -31,7 +31,7 @@ CONFIG_FILE = os.path.join(BASE_DIR, "web_config.json")
 TRANSLATE_CONFIG_FILE = os.path.join(BASE_DIR, "translate_config.json")
 
 model_lock = Lock()
-models = {"whisper": None, "hy": None, "tokenizer": None}
+models = {"whisper": None, "hy": None, "tokenizer": None, "whisper_device": None}
 
 # --- 默认配置常量 ---
 _DEFAULT_LANGUAGE = "pt"
@@ -59,6 +59,17 @@ _DEFAULT_PROMPT_TEMPLATE = (
     "将以下文本翻译为中文，注意只需要输出翻译后的结果，不要额外解释：\n{text}"
 )
 
+# --- 可下载 Whisper 模型列表 ---
+_DOWNLOADABLE_WHISPER_MODELS = [
+    {"name": "faster-whisper-tiny",     "repo_id": "Systran/faster-whisper-tiny",     "size": "~75 MB"},
+    {"name": "faster-whisper-base",     "repo_id": "Systran/faster-whisper-base",     "size": "~145 MB"},
+    {"name": "faster-whisper-small",    "repo_id": "Systran/faster-whisper-small",    "size": "~488 MB"},
+    {"name": "faster-whisper-medium",   "repo_id": "Systran/faster-whisper-medium",   "size": "~1.5 GB"},
+    {"name": "faster-whisper-large-v2", "repo_id": "Systran/faster-whisper-large-v2", "size": "~3.0 GB"},
+    {"name": "faster-whisper-large-v3", "repo_id": "Systran/faster-whisper-large-v3", "size": "~3.1 GB"},
+]
+_downloading_models = set()  # 正在下载的模型名集合
+
 # --- SocketIO 事件处理 ---
 @socketio.on('connect')
 def handle_connect():
@@ -71,14 +82,21 @@ def get_initial_config():
     config.setdefault('language', _DEFAULT_LANGUAGE)
     config['terminology'] = translate_cfg.get('terminology', _DEFAULT_TERMINOLOGY)
     config['prompt_template'] = translate_cfg.get('prompt_template', _DEFAULT_PROMPT_TEMPLATE)
+    config.setdefault('whisper_device', 'cuda')
+    config.setdefault('translate_mode', 'local')
+    config.setdefault('siliconflow_api_key', '')
+    config.setdefault('siliconflow_model', 'Qwen/Qwen2.5-7B-Instruct')
     socketio.emit('initial_config', config)
 
 @socketio.on('save_settings')
 def save_settings(data):
-    """保存语言到 web_config.json，术语表和 Prompt 保存到 translate_config.json。"""
+    """保存语言、Whisper 设备、翻译模式及 API 配置到 web_config.json，术语表和 Prompt 保存到 translate_config.json。"""
     try:
-        if 'language' in data:
-            _save_config({'language': data['language']})
+        web_fields = {k: v for k, v in data.items()
+                      if k in ('language', 'whisper_device', 'translate_mode',
+                               'siliconflow_api_key', 'siliconflow_model')}
+        if web_fields:
+            _save_config(web_fields)
         translate_fields = {k: v for k, v in data.items() if k in ('terminology', 'prompt_template')}
         if translate_fields:
             _save_translate_config(translate_fields)
@@ -103,15 +121,31 @@ def load_json_for_preview(data):
 def save_config(data):
     _save_config(data)
     emit_log('配置已保存。')
+
+@socketio.on('start_task')
 def start_task(data):
     task = data.get('task')
     paths = {k: data.get(k) for k in ['whisper_path', 'hy_path', 'audio_file']}
     # 语言、术语、Prompt 从请求中取，未传则读配置文件兜底
     config = _load_config()
     paths['language'] = data.get('language') or config.get('language', _DEFAULT_LANGUAGE)
+    paths['whisper_device'] = data.get('whisper_device') or config.get('whisper_device', 'cuda')
+    paths['translate_mode'] = data.get('translate_mode') or config.get('translate_mode', 'local')
+    paths['siliconflow_api_key'] = data.get('siliconflow_api_key') or config.get('siliconflow_api_key', '')
+    paths['siliconflow_model'] = data.get('siliconflow_model') or config.get('siliconflow_model', 'Qwen/Qwen2.5-7B-Instruct')
 
-    if task not in ('translate_json',) and not all(paths[k] for k in ['whisper_path', 'hy_path', 'audio_file']):
-        emit_error("所有路径都必须填写！")
+    is_api_translate = paths['translate_mode'] == 'api'
+    # ASR 只需要 whisper_path + audio_file
+    if task == 'asr':
+        if not paths.get('whisper_path') or not paths.get('audio_file'):
+            emit_error("语音识别需要设置 Whisper 模型路径和音频文件！")
+            return
+    elif task in ('translate', 'pipeline'):
+        if not is_api_translate and not all(paths[k] for k in ['whisper_path', 'hy_path', 'audio_file']):
+            emit_error("所有路径都必须填写！")
+            return
+    if task in ('translate_json', 'translate') and not is_api_translate and not paths.get('hy_path'):
+        emit_error("请设置混元翻译模型路径或切换为 API 翻译模式！")
         return
 
     # 仅保存路径类字段
@@ -133,9 +167,17 @@ def start_task(data):
 @socketio.on('direct_translate')
 def direct_translate(data):
     text = data.get('text')
+    config = _load_config()
     paths = {k: data.get(k) for k in ['whisper_path', 'hy_path']}
-    if not text or not all(paths.values()):
-        emit_error("快速翻译需要输入文本和完整的模型路径。")
+    paths['translate_mode'] = data.get('translate_mode') or config.get('translate_mode', 'local')
+    paths['siliconflow_api_key'] = data.get('siliconflow_api_key') or config.get('siliconflow_api_key', '')
+    paths['siliconflow_model'] = data.get('siliconflow_model') or config.get('siliconflow_model', 'Qwen/Qwen2.5-7B-Instruct')
+    is_api = paths['translate_mode'] == 'api'
+    if not text:
+        emit_error("快速翻译需要输入文本。")
+        return
+    if not is_api and not paths.get('hy_path'):
+        emit_error("请设置混元翻译模型路径或切换为 API 翻译模式。")
         return
     Thread(target=_direct_translate_worker, args=(text, paths)).start()
 
@@ -192,17 +234,23 @@ def _to_srt_time(seconds: float) -> str:
     return f"{h:02}:{m:02}:{s:02},{ms:03}"
 
 # --- 模型加载与管理 ---
-def _ensure_model(model_type, path):
+def _ensure_model(model_type, path, device='cuda'):
     # 必须在 torch 已导入后才能设置，此处是最早的安全时机
     import torch._dynamo
     torch._dynamo.config.suppress_errors = True
 
     with model_lock:
-        if model_type == 'whisper' and models['whisper'] is None:
-            from faster_whisper import WhisperModel
-            emit_log("正在加载 Whisper 模型...")
-            models['whisper'] = WhisperModel(path, device="cuda", compute_type="float16", local_files_only=True)
-            emit_log("Whisper 模型加载完成。")
+        if model_type == 'whisper':
+            # 设备切换时强制重新加载
+            if models['whisper'] is not None and models['whisper_device'] != device:
+                models['whisper'] = None
+            if models['whisper'] is None:
+                from faster_whisper import WhisperModel
+                compute_type = "float16" if device == "cuda" else "int8"
+                emit_log(f"正在加载 Whisper 模型 ({device.upper()})...")
+                models['whisper'] = WhisperModel(path, device=device, compute_type=compute_type, local_files_only=True)
+                models['whisper_device'] = device
+                emit_log("Whisper 模型加载完成。")
         elif model_type == 'hy' and models['hy'] is None:
             from transformers import AutoModelForCausalLM, AutoTokenizer
             emit_log("正在加载混元翻译模型...")
@@ -235,8 +283,9 @@ def _asr_worker(paths, standalone=False):
     # standalone=True: 进度 0→100%，完成后发 task_done 并恢复按钮
     # standalone=False (流水线): 进度 0→50%，由 pipeline 负责后续
     end_pct = 100 if standalone else 50
+    device = paths.get('whisper_device', 'cuda')
     try:
-        _ensure_model('whisper', paths['whisper_path'])
+        _ensure_model('whisper', paths['whisper_path'], device=device)
         emit_progress(5, "开始识别...")
 
         segments, info = models['whisper'].transcribe(
@@ -247,10 +296,14 @@ def _asr_worker(paths, standalone=False):
             initial_prompt="CS2, Major, esports, FalleN, fer, fnx, coldzera, taco")
 
         results, total_dur = [], info.duration
+        def _fmt_dur(sec):
+            m, s = divmod(int(sec), 60)
+            return f"{m:02}:{s:02}"
         for s in segments:
             results.append({"start": _to_srt_time(s.start), "end": _to_srt_time(s.end), "text": s.text})
             pct = min(s.end / total_dur * 100, 99)
-            emit_progress(5 + int(pct * 0.45 * (end_pct / 50)), f"识别中: {s.text.strip()[:30]}...")
+            emit_log(f"[{_fmt_dur(s.start)} / {_fmt_dur(total_dur)}] {s.text.strip()}")
+            emit_progress(5 + int(pct * 0.45 * (end_pct / 50)), "识别中...")
 
         out_path = os.path.join(os.path.dirname(paths['audio_file']), "transcription.json")
         with open(out_path, "w", encoding="utf-8") as f:
@@ -300,8 +353,11 @@ def _translate_worker(paths, standalone=False):
 
 def _translate_worker_core(paths, transcription: list, output_dir: str, start_pct: int = 0):
     """翻译核心逻辑，供 _translate_worker 和 _translate_json_worker 共用。"""
+    translate_mode = paths.get('translate_mode', 'local')
+    is_api = translate_mode == 'api'
     try:
-        _ensure_model('hy', paths['hy_path'])
+        if not is_api:
+            _ensure_model('hy', paths['hy_path'])
         emit_progress(start_pct + 5, "开始翻译...")
 
         results, total_items = [], len(transcription)
@@ -309,11 +365,18 @@ def _translate_worker_core(paths, transcription: list, output_dir: str, start_pc
             text = item["text"].strip()
             if not text: continue
 
-            translated = _call_hy(text)
+            if is_api:
+                translated = _call_siliconflow_api(
+                    text,
+                    paths.get('siliconflow_api_key', ''),
+                    paths.get('siliconflow_model', 'Qwen/Qwen2.5-7B-Instruct')
+                )
+            else:
+                translated = _call_hy(text)
             results.append({"start": item["start"], "end": item["end"], "text": translated})
             pct = (i + 1) / total_items * 100
-            emit_progress(start_pct + 5 + int(pct * 0.9 * ((100 - start_pct) / 100)),
-                          f"翻译中: {translated[:30]}...")
+            emit_log(f"[{i + 1} / {total_items}] {translated}")
+            emit_progress(start_pct + 5 + int(pct * 0.9 * ((100 - start_pct) / 100)), f"翻译中 {i + 1}/{total_items}...")
 
         srt_path = os.path.join(output_dir, "final_chinese_subtitles.srt")
         with open(srt_path, "w", encoding="utf-8") as f:
@@ -327,7 +390,8 @@ def _translate_worker_core(paths, transcription: list, output_dir: str, start_pc
         emit_error(f"翻译任务失败: {e}")
         return False
     finally:
-        _release_model('hy')
+        if not is_api:
+            _release_model('hy')
 
 
 def _pipeline_worker(paths):
@@ -335,14 +399,50 @@ def _pipeline_worker(paths):
         _translate_worker(paths)
 
 def _direct_translate_worker(text, paths):
+    is_api = paths.get('translate_mode') == 'api'
     try:
-        _ensure_model('hy', paths['hy_path'])
-        translated_text = _call_hy(text)
+        if is_api:
+            translated_text = _call_siliconflow_api(
+                text,
+                paths.get('siliconflow_api_key', ''),
+                paths.get('siliconflow_model', 'Qwen/Qwen2.5-7B-Instruct')
+            )
+        else:
+            _ensure_model('hy', paths['hy_path'])
+            translated_text = _call_hy(text)
         socketio.emit('direct_translate_result', {'text': translated_text})
     except Exception as e:
         emit_error(f"快速翻译失败: {e}")
     finally:
-        _release_model('hy')
+        if not is_api:
+            _release_model('hy')
+
+def _call_siliconflow_api(text: str, api_key: str, model: str) -> str:
+    """调用硅基流动兼容 OpenAI 的 API 进行翻译。"""
+    import requests
+    if not api_key:
+        raise ValueError("硅基流动 API Key 未配置，请在设置中填写。")
+    translate_cfg = _load_translate_config()
+    terminology = translate_cfg.get('terminology', _DEFAULT_TERMINOLOGY)
+    prompt_template = translate_cfg.get('prompt_template', _DEFAULT_PROMPT_TEMPLATE)
+    terms_text = "\n".join(f"{t['source']} 翻译成 {t['target']}" for t in terminology)
+    prompt = prompt_template.format(terms=terms_text, text=text)
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 512,
+        "temperature": 0.7,
+        "stream": False
+    }
+    resp = requests.post(
+        "https://api.siliconflow.cn/v1/chat/completions",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=30
+    )
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
 
 def _call_hy(text: str) -> str:
     """调用混元模型翻译，术语表和 Prompt 从 translate_config.json 读取。"""
@@ -370,6 +470,104 @@ def _call_hy(text: str) -> str:
 def index():
     return render_template('index.html')
 
+@app.route('/list_whisper_models')
+def list_whisper_models():
+    """扫描 BASE_DIR 下包含 vocabulary.json 的子目录（faster-whisper 模型特征）。"""
+    found = []
+    try:
+        for name in sorted(os.listdir(BASE_DIR)):
+            full = os.path.join(BASE_DIR, name)
+            if os.path.isdir(full) and os.path.exists(os.path.join(full, 'vocabulary.json')):
+                found.append({'name': name, 'path': full})
+    except Exception:
+        pass
+    return {'models': found}
+
+@app.route('/env_check')
+def env_check():
+    """环境自检：检查 CUDA、虚拟环境、必要组件、模型目录。"""
+    import subprocess, shutil
+    results = []
+
+    # 1. CUDA 版本
+    try:
+        import torch
+        if torch.cuda.is_available():
+            cuda_ver = torch.version.cuda or '未知'
+            gpu_name = torch.cuda.get_device_name(0)
+            results.append({'name': 'CUDA', 'status': 'ok', 'detail': f'CUDA {cuda_ver} — {gpu_name}'})
+        else:
+            results.append({'name': 'CUDA', 'status': 'warn', 'detail': 'torch.cuda 不可用（仅 CPU 模式可用）'})
+    except ImportError:
+        results.append({'name': 'CUDA', 'status': 'fail', 'detail': 'PyTorch 未安装，无法检测 CUDA'})
+    except Exception as e:
+        results.append({'name': 'CUDA', 'status': 'fail', 'detail': str(e)})
+
+    # 2. 虚拟环境
+    in_venv = (hasattr(sys, 'real_prefix') or
+               (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix))
+    venv_path = sys.prefix
+    if in_venv:
+        results.append({'name': '虚拟环境', 'status': 'ok', 'detail': f'已激活: {venv_path}'})
+    else:
+        results.append({'name': '虚拟环境', 'status': 'warn', 'detail': f'未使用虚拟环境 (当前: {venv_path})'})
+
+    # 3. 必要组件
+    required_packages = [
+        ('torch', 'PyTorch'),
+        ('transformers', 'Transformers'),
+        ('faster_whisper', 'Faster-Whisper'),
+        ('flask', 'Flask'),
+        ('flask_socketio', 'Flask-SocketIO'),
+        ('optimum', 'Optimum'),
+        ('gptqmodel', 'GPTQModel'),
+        ('accelerate', 'Accelerate'),
+        ('tqdm', 'tqdm'),
+    ]
+    for mod_name, display_name in required_packages:
+        try:
+            mod = __import__(mod_name)
+            ver = getattr(mod, '__version__', '已安装')
+            results.append({'name': display_name, 'status': 'ok', 'detail': f'v{ver}'})
+        except ImportError:
+            results.append({'name': display_name, 'status': 'fail', 'detail': '未安装'})
+
+    # 4. Whisper 模型（必要）
+    whisper_models = []
+    try:
+        for name in sorted(os.listdir(BASE_DIR)):
+            full = os.path.join(BASE_DIR, name)
+            if os.path.isdir(full) and os.path.exists(os.path.join(full, 'vocabulary.json')):
+                whisper_models.append(name)
+    except Exception:
+        pass
+    if whisper_models:
+        results.append({'name': 'Whisper 模型', 'status': 'ok', 'detail': '、'.join(whisper_models)})
+    else:
+        results.append({'name': 'Whisper 模型', 'status': 'fail', 'detail': '未检测到（需包含 vocabulary.json 的目录）'})
+
+    # 5. HY 翻译模型（非必要）
+    hy_models = []
+    try:
+        for name in sorted(os.listdir(BASE_DIR)):
+            full = os.path.join(BASE_DIR, name)
+            if os.path.isdir(full) and os.path.exists(os.path.join(full, 'tokenizer_config.json')):
+                # 排除 whisper 模型
+                if not os.path.exists(os.path.join(full, 'vocabulary.json')):
+                    hy_models.append(name)
+    except Exception:
+        pass
+    if hy_models:
+        results.append({'name': 'HY 翻译模型', 'status': 'ok', 'detail': '、'.join(hy_models)})
+    else:
+        results.append({'name': 'HY 翻译模型', 'status': 'warn', 'detail': '未检测到（非必要，可使用 API 模式）'})
+
+    # 6. Python 版本
+    py_ver = f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}'
+    results.append({'name': 'Python', 'status': 'ok', 'detail': f'v{py_ver} ({sys.executable})'})
+
+    return {'results': results}
+
 @app.route('/browse')
 def browse():
     """在服务端弹出系统原生选择框，将路径返回给前端。"""
@@ -393,6 +591,144 @@ def browse():
         path = filedialog.askdirectory(title='选择文件夹')
     root.destroy()
     return {'path': path or ''}
+
+@app.route('/list_downloadable_models')
+def list_downloadable_models():
+    """返回可下载的 Whisper 模型列表及本地下载状态。"""
+    result = []
+    for m in _DOWNLOADABLE_WHISPER_MODELS:
+        local_dir = os.path.join(BASE_DIR, m['name'])
+        downloaded = (os.path.isdir(local_dir) and
+                      os.path.exists(os.path.join(local_dir, 'vocabulary.json')))
+        result.append({**m, 'downloaded': downloaded,
+                        'downloading': m['name'] in _downloading_models})
+    return {'models': result}
+
+
+@socketio.on('download_whisper_model')
+def on_download_whisper_model(data):
+    repo_id   = (data.get('repo_id')   or '').strip()
+    model_name = (data.get('name')     or '').strip()
+    mirror    = (data.get('mirror')    or 'https://hf-mirror.com').strip().rstrip('/')
+    sid = request.sid
+    # 白名单校验，防止路径穿越
+    valid_names = {m['name'] for m in _DOWNLOADABLE_WHISPER_MODELS}
+    if model_name not in valid_names or '/' not in repo_id:
+        socketio.emit('model_download_error', {'model': model_name, 'msg': '无效的模型参数'}, to=sid)
+        return
+    if model_name in _downloading_models:
+        socketio.emit('model_download_error', {'model': model_name, 'msg': '该模型正在下载中，请等待完成'}, to=sid)
+        return
+    _downloading_models.add(model_name)
+    Thread(target=_download_model_worker, args=(repo_id, model_name, mirror, sid)).start()
+
+
+def _download_model_worker(repo_id, model_name, mirror, sid):
+    """后台线程：逐文件流式下载模型并实时推送进度。"""
+    import requests as _req
+    import time as _time
+
+    def _log(msg):
+        socketio.emit('model_download_log', {'model': model_name, 'msg': msg}, to=sid)
+
+    def _prog(payload):
+        socketio.emit('model_download_progress', payload, to=sid)
+
+    target_dir = os.path.join(BASE_DIR, model_name)
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+        _log(f'镜像源: {mirror}')
+        _log('正在获取文件列表...')
+
+        files = None
+        # 优先用 huggingface_hub（支持 endpoint 参数），回退到原始 API
+        for ep in [mirror, 'https://huggingface.co']:
+            try:
+                from huggingface_hub import HfApi
+                api = HfApi(endpoint=ep)
+                files = list(api.list_repo_files(repo_id=repo_id, repo_type='model'))
+                break
+            except Exception:
+                pass
+        if not files:
+            for ep in [mirror, 'https://huggingface.co']:
+                try:
+                    r = _req.get(f'{ep}/api/models/{repo_id}', timeout=30)
+                    r.raise_for_status()
+                    files = [f['rfilename'] for f in r.json().get('siblings', [])]
+                    if files:
+                        break
+                except Exception:
+                    pass
+        if not files:
+            raise RuntimeError('无法获取文件列表，请检查网络或镜像源')
+
+        total_files = len(files)
+        _log(f'共 {total_files} 个文件，开始下载...')
+
+        for i, filename in enumerate(files):
+            file_url = f'{mirror}/{repo_id}/resolve/main/{filename}'
+            # 处理子目录（如 subdir/file.bin）
+            rel_parts = filename.replace('\\', '/').split('/')
+            target_path = os.path.join(target_dir, *rel_parts)
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+
+            _prog({'model': model_name, 'file': filename,
+                   'file_index': i + 1, 'total_files': total_files,
+                   'file_pct': 0, 'downloaded_mb': 0, 'total_mb': 0, 'speed': ''})
+
+            # timeout=(连接超时, 读取超时)；读取设为 None，避免大文件被提前中断
+            with _req.get(file_url, stream=True, timeout=(15, None),
+                          allow_redirects=True) as resp:
+                resp.raise_for_status()
+                effective_url = resp.url  # 跟随重定向后的实际 URL
+                if effective_url != file_url:
+                    _log(f'重定向至: {effective_url[:80]}...')
+                total_size = int(resp.headers.get('content-length', 0))
+                downloaded = 0
+                last_emit = -1
+                t0 = _time.monotonic()
+                speed_bytes = 0
+                speed_t = t0
+
+                with open(target_path, 'wb') as f:
+                    for chunk in resp.iter_content(chunk_size=512 * 1024):
+                        if chunk:
+                            f.write(chunk)
+                            downloaded += len(chunk)
+                            speed_bytes += len(chunk)
+                            now = _time.monotonic()
+                            elapsed = now - speed_t
+                            # 每 1 MB 或完成时推送一次进度
+                            if downloaded - last_emit >= 1024 * 1024 or downloaded == total_size:
+                                last_emit = downloaded
+                                pct = int(downloaded / total_size * 100) if total_size else 0
+                                speed_str = ''
+                                if elapsed > 0.5:
+                                    spd = speed_bytes / elapsed
+                                    speed_bytes = 0
+                                    speed_t = now
+                                    if spd > 1024 * 1024:
+                                        speed_str = f'{spd / 1024 / 1024:.1f} MB/s'
+                                    else:
+                                        speed_str = f'{spd / 1024:.0f} KB/s'
+                                _prog({
+                                    'model': model_name,
+                                    'file': filename,
+                                    'file_index': i + 1,
+                                    'total_files': total_files,
+                                    'file_pct': pct,
+                                    'downloaded_mb': round(downloaded / 1024 / 1024, 1),
+                                    'total_mb': round(total_size / 1024 / 1024, 1),
+                                    'speed': speed_str,
+                                })
+
+        socketio.emit('model_download_done', {'model': model_name}, to=sid)
+    except Exception as e:
+        socketio.emit('model_download_error', {'model': model_name, 'msg': str(e)}, to=sid)
+    finally:
+        _downloading_models.discard(model_name)
+
 
 def run_app():
     # 在新线程中打开浏览器，避免阻塞

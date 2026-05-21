@@ -1,5 +1,5 @@
 {
-  "whisper_path": "D:/lesson/translate/faster-whisper-large-v3",
+  "whisper_path": "D:\\lesson\\translate\\faster-whisper-large-v3",
   "hy_path": "D:/lesson/translate/HY-MT1.5-7B-GPTQ-Int4",
   "audio_file": "D:/lesson/translate/transcription.json",
   "language": "pt",
@@ -72,5 +72,9 @@
       "source": "Mirage",
       "target": "Mirage"
     }
-  ]
+  ],
+  "translate_mode": "api",
+  "whisper_device": "cpu",
+  "siliconflow_api_key": "sk-nltjtbecttnyvzzlfrqpxaoyezkguwlsojgqhofnbmicprhf",
+  "siliconflow_model": "tencent/Hunyuan-MT-7B"
 }
