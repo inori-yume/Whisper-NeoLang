@@ -21,7 +21,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_MODEL_PATH = "./HY-MT1.5-7B-GPTQ-Int4"
 input_json = "transcription.json"
-output_srt = "final_chinese_subtitles.srt"
+output_srt = ""
 
 def _resolve_model_path() -> str:
     """优先读取 web_config.json 中前端保存的 hy_path，未配置时回退默认值。"""
@@ -127,6 +127,11 @@ if __name__ == "__main__":
     if not os.path.exists(input_json):
         print(f"找不到识别文件: {input_json}")
         sys.exit(1)
+
+    if not output_srt:
+        input_stem = os.path.splitext(os.path.basename(input_json))[0]
+        input_dir = os.path.dirname(input_json)
+        output_srt = os.path.join(input_dir, f"{input_stem}.srt") if input_dir else f"{input_stem}.srt"
 
     with open(input_json, "r", encoding="utf-8") as f:
         transcription_data = json.load(f)

@@ -332,9 +332,10 @@ def _translate_json_worker(paths, json_path: str):
         emit_error(f'读取 JSON 文件失败: {e}')
         return
 
-    # 复用 _translate_worker 逻辑，output 输出到 JSON 同级目录
+    # 输出到 JSON 同级目录，且文件名与输入 JSON 保持一致
     output_dir = os.path.dirname(json_path)
-    _translate_worker_core(paths, transcription, output_dir)
+    output_stem = os.path.splitext(os.path.basename(json_path))[0]
+    _translate_worker_core(paths, transcription, output_dir, output_stem=output_stem)
 
 
 def _translate_worker(paths, standalone=False):
@@ -351,10 +352,16 @@ def _translate_worker(paths, standalone=False):
         transcription = json.load(f)
 
     output_dir = os.path.dirname(paths['audio_file'])
-    return _translate_worker_core(paths, transcription, output_dir, start_pct=start_pct)
+    return _translate_worker_core(
+        paths,
+        transcription,
+        output_dir,
+        start_pct=start_pct,
+        output_stem=_audio_stem,
+    )
 
 
-def _translate_worker_core(paths, transcription: list, output_dir: str, start_pct: int = 0):
+def _translate_worker_core(paths, transcription: list, output_dir: str, start_pct: int = 0, output_stem: str = ""):
     """翻译核心逻辑，供 _translate_worker 和 _translate_json_worker 共用。"""
     translate_mode = paths.get('translate_mode', 'local')
     is_api = translate_mode == 'api'
@@ -366,7 +373,8 @@ def _translate_worker_core(paths, transcription: list, output_dir: str, start_pc
         results, total_items = [], len(transcription)
         for i, item in enumerate(transcription):
             text = item["text"].strip()
-            if not text: continue
+            if not text:
+                continue
 
             if is_api:
                 translated = _call_siliconflow_api(
@@ -376,12 +384,15 @@ def _translate_worker_core(paths, transcription: list, output_dir: str, start_pc
                 )
             else:
                 translated = _call_hy(text)
+
             results.append({"start": item["start"], "end": item["end"], "text": translated})
             pct = (i + 1) / total_items * 100
             emit_log(f"[{i + 1} / {total_items}] {translated}")
             emit_progress(start_pct + 5 + int(pct * 0.9 * ((100 - start_pct) / 100)), f"翻译中 {i + 1}/{total_items}...")
 
-        srt_path = os.path.join(output_dir, "final_chinese_subtitles.srt")
+        if not output_stem:
+            output_stem = "final_chinese_subtitles"
+        srt_path = os.path.join(output_dir, f"{output_stem}.srt")
         with open(srt_path, "w", encoding="utf-8") as f:
             for i, r in enumerate(results, 1):
                 f.write(f"{i}\n{r['start']} --> {r['end']}\n{r['text']}\n\n")
