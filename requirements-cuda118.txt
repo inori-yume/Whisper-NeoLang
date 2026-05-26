@@ -21,3 +21,6 @@ tqdm
 Flask
 Flask-SocketIO
 simple-websocket
+
+# Video download
+yt-dlp

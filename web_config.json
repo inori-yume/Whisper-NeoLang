@@ -1,7 +1,7 @@
 {
-  "whisper_path": "D:\\lesson\\translate\\faster-whisper-large-v3",
-  "hy_path": "D:/lesson/translate/HY-MT1.5-7B-GPTQ-Int4",
-  "audio_file": "D:/lesson/translate/transcription.json",
+  "whisper_path": "",
+  "hy_path": "",
+  "audio_file": "",
   "language": "pt",
   "terminology": [
     {
@@ -14,7 +14,7 @@
     },
     {
       "source": "Save",
-      "target": "Save"
+      "target": "保枪"
     },
     {
       "source": "Major",
@@ -22,7 +22,7 @@
     },
     {
       "source": "Site",
-      "target": "Site"
+      "target": "包点"
     },
     {
       "source": "CT",
@@ -46,15 +46,15 @@
     },
     {
       "source": "Molotov",
-      "target": "Molotov"
+      "target": "火"
     },
     {
       "source": "Flash",
-      "target": "Flash"
+      "target": "闪光"
     },
     {
       "source": "Smoke",
-      "target": "Smoke"
+      "target": "烟"
     },
     {
       "source": "Nuke",
@@ -62,11 +62,11 @@
     },
     {
       "source": "Dust2",
-      "target": "Dust2"
+      "target": "沙二"
     },
     {
       "source": "Inferno",
-      "target": "Inferno"
+      "target": "炼狱小镇"
     },
     {
       "source": "Mirage",
@@ -74,7 +74,7 @@
     }
   ],
   "translate_mode": "api",
-  "whisper_device": "cpu",
+  "whisper_device": "cuda",
   "siliconflow_api_key": "sk-nltjtbecttnyvzzlfrqpxaoyezkguwlsojgqhofnbmicprhf",
   "siliconflow_model": "tencent/Hunyuan-MT-7B"
 }

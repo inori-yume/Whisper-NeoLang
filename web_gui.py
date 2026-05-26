@@ -27,6 +27,7 @@ if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(sys.executable)
 else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR = os.path.join(BASE_DIR, "models")
 CONFIG_FILE = os.path.join(BASE_DIR, "web_config.json")
 TRANSLATE_CONFIG_FILE = os.path.join(BASE_DIR, "translate_config.json")
 
@@ -305,7 +306,8 @@ def _asr_worker(paths, standalone=False):
             emit_log(f"[{_fmt_dur(s.start)} / {_fmt_dur(total_dur)}] {s.text.strip()}")
             emit_progress(5 + int(pct * 0.45 * (end_pct / 50)), "识别中...")
 
-        out_path = os.path.join(os.path.dirname(paths['audio_file']), "transcription.json")
+        _audio_stem = os.path.splitext(os.path.basename(paths['audio_file']))[0]
+        out_path = os.path.join(os.path.dirname(paths['audio_file']), f"{_audio_stem}.json")
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(results, f, ensure_ascii=False, indent=2)
 
@@ -339,7 +341,8 @@ def _translate_worker(paths, standalone=False):
     # standalone=True: 进度 0→100%
     # standalone=False (流水线): 进度 50→100%
     start_pct = 0 if standalone else 50
-    json_path = os.path.join(os.path.dirname(paths['audio_file']), "transcription.json")
+    _audio_stem = os.path.splitext(os.path.basename(paths['audio_file']))[0]
+    json_path = os.path.join(os.path.dirname(paths['audio_file']), f"{_audio_stem}.json")
     if not os.path.exists(json_path):
         emit_error(f"未找到识别结果文件: {json_path}")
         return False
@@ -472,11 +475,12 @@ def index():
 
 @app.route('/list_whisper_models')
 def list_whisper_models():
-    """扫描 BASE_DIR 下包含 vocabulary.json 的子目录（faster-whisper 模型特征）。"""
+    """扫描 MODELS_DIR 下包含 vocabulary.json 的子目录（faster-whisper 模型特征）。"""
     found = []
+    os.makedirs(MODELS_DIR, exist_ok=True)
     try:
-        for name in sorted(os.listdir(BASE_DIR)):
-            full = os.path.join(BASE_DIR, name)
+        for name in sorted(os.listdir(MODELS_DIR)):
+            full = os.path.join(MODELS_DIR, name)
             if os.path.isdir(full) and os.path.exists(os.path.join(full, 'vocabulary.json')):
                 found.append({'name': name, 'path': full})
     except Exception:
@@ -535,8 +539,8 @@ def env_check():
     # 4. Whisper 模型（必要）
     whisper_models = []
     try:
-        for name in sorted(os.listdir(BASE_DIR)):
-            full = os.path.join(BASE_DIR, name)
+        for name in sorted(os.listdir(MODELS_DIR)):
+            full = os.path.join(MODELS_DIR, name)
             if os.path.isdir(full) and os.path.exists(os.path.join(full, 'vocabulary.json')):
                 whisper_models.append(name)
     except Exception:
@@ -549,8 +553,8 @@ def env_check():
     # 5. HY 翻译模型（非必要）
     hy_models = []
     try:
-        for name in sorted(os.listdir(BASE_DIR)):
-            full = os.path.join(BASE_DIR, name)
+        for name in sorted(os.listdir(MODELS_DIR)):
+            full = os.path.join(MODELS_DIR, name)
             if os.path.isdir(full) and os.path.exists(os.path.join(full, 'tokenizer_config.json')):
                 # 排除 whisper 模型
                 if not os.path.exists(os.path.join(full, 'vocabulary.json')):
@@ -597,7 +601,7 @@ def list_downloadable_models():
     """返回可下载的 Whisper 模型列表及本地下载状态。"""
     result = []
     for m in _DOWNLOADABLE_WHISPER_MODELS:
-        local_dir = os.path.join(BASE_DIR, m['name'])
+        local_dir = os.path.join(MODELS_DIR, m['name'])
         downloaded = (os.path.isdir(local_dir) and
                       os.path.exists(os.path.join(local_dir, 'vocabulary.json')))
         result.append({**m, 'downloaded': downloaded,
@@ -634,7 +638,7 @@ def _download_model_worker(repo_id, model_name, mirror, sid):
     def _prog(payload):
         socketio.emit('model_download_progress', payload, to=sid)
 
-    target_dir = os.path.join(BASE_DIR, model_name)
+    target_dir = os.path.join(MODELS_DIR, model_name)
     try:
         os.makedirs(target_dir, exist_ok=True)
         _log(f'镜像源: {mirror}')
@@ -728,6 +732,205 @@ def _download_model_worker(repo_id, model_name, mirror, sid):
         socketio.emit('model_download_error', {'model': model_name, 'msg': str(e)}, to=sid)
     finally:
         _downloading_models.discard(model_name)
+
+
+# ---------------------------------------------------------------------------
+# Instagram Reels 下载
+# ---------------------------------------------------------------------------
+_REELS_DEFAULT_DIR = os.path.join(BASE_DIR, 'reels_downloads')
+
+
+@socketio.on('start_reels_download')
+def on_start_reels_download(data):
+    raw_urls = data.get('urls', [])
+    output_dir = (data.get('output_dir') or '').strip()
+    sid = request.sid
+
+    # 仅允许 HTTP/HTTPS，防止任意协议注入
+    valid_urls = [u.strip() for u in raw_urls
+                  if u.strip().startswith(('http://', 'https://'))]
+    if not valid_urls:
+        socketio.emit('reels_error', {'msg': '没有检测到有效的 HTTP/HTTPS 链接'}, to=sid)
+        return
+
+    # 目录路径只允许绝对路径，防止路径穿越
+    if output_dir:
+        output_dir = os.path.abspath(output_dir)
+    else:
+        output_dir = _REELS_DEFAULT_DIR
+
+    Thread(target=_reels_download_worker, args=(valid_urls, output_dir, sid)).start()
+
+
+def _reels_download_worker(urls, output_dir, sid):
+    try:
+        import yt_dlp  # noqa: F401
+    except ImportError:
+        socketio.emit('reels_error',
+                      {'msg': 'yt-dlp 未安装，请在虚拟环境中运行: pip install yt-dlp'},
+                      to=sid)
+        return
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    for idx, url in enumerate(urls):
+        socketio.emit('reels_progress',
+                      {'index': idx, 'url': url, 'status': 'start', 'total': len(urls)},
+                      to=sid)
+
+        def _hook(d, _idx=idx, _url=url):
+            if d['status'] == 'downloading':
+                dl = d.get('downloaded_bytes') or 0
+                total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+                pct = int(dl / total * 100) if total else 0
+                spd = d.get('speed') or 0
+                if spd > 1024 * 1024:
+                    spd_str = f'{spd / 1024 / 1024:.1f} MB/s'
+                elif spd > 0:
+                    spd_str = f'{spd / 1024:.0f} KB/s'
+                else:
+                    spd_str = ''
+                eta = d.get('eta') or 0
+                socketio.emit('reels_progress', {
+                    'index': _idx, 'url': _url, 'status': 'downloading',
+                    'percent': pct, 'speed': spd_str,
+                    'eta': f'{eta}s' if eta else '',
+                    'downloaded_mb': round(dl / 1024 / 1024, 1),
+                    'total_mb': round(total / 1024 / 1024, 1),
+                }, to=sid)
+            elif d['status'] == 'finished':
+                socketio.emit('reels_progress', {
+                    'index': _idx, 'url': _url, 'status': 'finished',
+                    'filename': os.path.basename(d.get('filename', '')),
+                }, to=sid)
+
+        ydl_opts = {
+            'outtmpl': os.path.join(output_dir, '%(uploader)s_%(upload_date)s_%(id)s.%(ext)s'),
+            'progress_hooks': [_hook],
+            'quiet': True,
+            'no_warnings': True,
+            'merge_output_format': 'mp4',
+        }
+
+        try:
+            import yt_dlp
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([url])
+        except Exception as e:
+            socketio.emit('reels_progress', {
+                'index': idx, 'url': url, 'status': 'error', 'msg': str(e),
+            }, to=sid)
+
+    socketio.emit('reels_done', {'total': len(urls), 'output_dir': output_dir}, to=sid)
+
+
+# ---------------------------------------------------------------------------
+# 在线更新（git pull + pip install）
+# ---------------------------------------------------------------------------
+@socketio.on('check_update')
+def on_check_update():
+    sid = request.sid
+    Thread(target=_update_worker, args=(False, sid)).start()
+
+
+@socketio.on('do_update')
+def on_do_update():
+    sid = request.sid
+    Thread(target=_update_worker, args=(True, sid)).start()
+
+
+def _update_worker(do_pull: bool, sid: str):
+    def _emit(line, level='info'):
+        socketio.emit('update_log', {'line': line, 'level': level}, to=sid)
+
+    try:
+        import subprocess as _sp
+
+        # ── 检查 git ────────────────────────────────────────────
+        git = _sp.run(['git', '-C', BASE_DIR, 'rev-parse', '--is-inside-work-tree'],
+                      capture_output=True, text=True)
+        if git.returncode != 0:
+            _emit('当前目录不是 Git 仓库，无法自动更新。', 'error')
+            _emit('请手动下载最新代码替换项目文件。', 'warn')
+            socketio.emit('update_done', {'success': False, 'restart': False}, to=sid)
+            return
+
+        if not do_pull:
+            # 仅检查：fetch + 对比提交数
+            _emit('正在从远端获取信息（git fetch）...')
+            _sp.run(['git', '-C', BASE_DIR, 'fetch'], capture_output=True)
+            behind = _sp.run(
+                ['git', '-C', BASE_DIR, 'rev-list', 'HEAD..@{u}', '--count'],
+                capture_output=True, text=True).stdout.strip()
+            ahead = _sp.run(
+                ['git', '-C', BASE_DIR, 'rev-list', '@{u}..HEAD', '--count'],
+                capture_output=True, text=True).stdout.strip()
+            if behind == '0':
+                _emit('已是最新版本，无需更新。', 'success')
+                socketio.emit('update_done', {'success': True, 'restart': False,
+                                              'behind': 0}, to=sid)
+            else:
+                _emit(f'发现 {behind} 个新提交，可点击"立即更新"。', 'warn')
+                socketio.emit('update_done', {'success': True, 'restart': False,
+                                              'behind': int(behind or 0)}, to=sid)
+            return
+
+        # ── 执行更新 ────────────────────────────────────────────
+        # 记录 requirements.txt 旧哈希
+        import hashlib
+        def _hash(p):
+            try:
+                return hashlib.md5(open(p, 'rb').read()).hexdigest()
+            except FileNotFoundError:
+                return ''
+
+        req_path = os.path.join(BASE_DIR, 'requirements.txt')
+        old_req_hash = _hash(req_path)
+
+        _emit('执行 git pull...')
+        pull = _sp.run(['git', '-C', BASE_DIR, 'pull'],
+                       capture_output=True, text=True)
+        for line in (pull.stdout + pull.stderr).splitlines():
+            _emit(line)
+        if pull.returncode != 0:
+            _emit('git pull 失败，请检查网络或手动解决冲突。', 'error')
+            socketio.emit('update_done', {'success': False, 'restart': False}, to=sid)
+            return
+
+        # ── 依赖是否变化 ─────────────────────────────────────────
+        needs_pip = _hash(req_path) != old_req_hash
+        if needs_pip:
+            _emit('requirements.txt 已变更，正在更新依赖...')
+            pip = _sp.run([sys.executable, '-m', 'pip', 'install', '-r', req_path],
+                          capture_output=True, text=True)
+            for line in (pip.stdout + pip.stderr).splitlines():
+                _emit(line)
+            if pip.returncode != 0:
+                _emit('依赖安装失败，请手动运行 pip install -r requirements.txt。', 'error')
+                socketio.emit('update_done', {'success': False, 'restart': False}, to=sid)
+                return
+            _emit('依赖更新完成。', 'success')
+            # 更新 .req_hash 标记（供 launcher.py 使用）
+            marker = os.path.join(BASE_DIR, '.venv', '.req_hash')
+            if os.path.exists(os.path.dirname(marker)):
+                with open(marker, 'w') as f:
+                    f.write(_hash(req_path))
+        else:
+            _emit('依赖无变化，跳过 pip install。')
+
+        _emit('更新完成！服务即将重启...', 'success')
+        socketio.emit('update_done', {'success': True, 'restart': True}, to=sid)
+
+        # 延迟 1.5 秒后重启进程（给前端响应时间）
+        def _restart():
+            import time
+            time.sleep(1.5)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        Thread(target=_restart, daemon=True).start()
+
+    except Exception as e:
+        _emit(f'更新过程出错: {e}', 'error')
+        socketio.emit('update_done', {'success': False, 'restart': False}, to=sid)
 
 
 def run_app():

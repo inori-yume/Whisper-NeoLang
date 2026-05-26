@@ -395,6 +395,165 @@ document.addEventListener('DOMContentLoaded', function () {
     var btnRerun = el('btn-rerun-env-check');
     if (btnRerun) btnRerun.addEventListener('click', runEnvCheck);
 
+    // ============ In-app Update ============
+    var updateLogBox = el('update-log-box');
+    var updateStatus = el('update-status-text');
+    var btnDoCheck = el('btn-do-check');
+    var btnDoUpdate = el('btn-do-update');
+    var updateModal = document.getElementById('updateModal');
+
+    function appendUpdateLog(line, level) {
+        if (!updateLogBox) return;
+        var colors = { success: 'text-success', error: 'text-danger', warn: 'text-warning' };
+        var cls = colors[level] || 'text-info';
+        var time = new Date().toLocaleTimeString();
+        updateLogBox.innerHTML += '<div class="' + cls + '"><small class="text-muted me-2">' + time + '</small>' + escHtml(line) + '</div>';
+        updateLogBox.scrollTop = updateLogBox.scrollHeight;
+    }
+
+    if (updateModal) {
+        updateModal.addEventListener('show.bs.modal', function () {
+            updateLogBox.innerHTML = '点击"检查"开始检测...';
+            if (updateStatus) updateStatus.textContent = '';
+            if (btnDoUpdate) btnDoUpdate.classList.add('d-none');
+        });
+    }
+
+    if (btnDoCheck) {
+        btnDoCheck.addEventListener('click', function () {
+            updateLogBox.innerHTML = '';
+            if (updateStatus) updateStatus.textContent = '检查中...';
+            if (btnDoUpdate) btnDoUpdate.classList.add('d-none');
+            btnDoCheck.disabled = true;
+            socket.emit('check_update');
+        });
+    }
+
+    if (btnDoUpdate) {
+        btnDoUpdate.addEventListener('click', function () {
+            updateLogBox.innerHTML = '';
+            if (updateStatus) updateStatus.textContent = '更新中...';
+            btnDoUpdate.disabled = true;
+            if (btnDoCheck) btnDoCheck.disabled = true;
+            socket.emit('do_update');
+        });
+    }
+
+    socket.on('update_log', function (d) { appendUpdateLog(d.line, d.level); });
+
+    socket.on('update_done', function (d) {
+        if (btnDoCheck) btnDoCheck.disabled = false;
+        if (d.restart) {
+            if (updateStatus) updateStatus.textContent = '重启中，页面将自动刷新...';
+            setTimeout(function () { location.reload(); }, 3000);
+        } else if (d.behind > 0) {
+            if (updateStatus) updateStatus.textContent = '发现 ' + d.behind + ' 个新提交';
+            if (btnDoUpdate) { btnDoUpdate.classList.remove('d-none'); btnDoUpdate.disabled = false; }
+        } else {
+            if (updateStatus) updateStatus.textContent = d.success ? '已是最新版本' : '更新失败';
+        }
+    });
+
+    // ============ Reels Download ============
+    function reelsItemHtml(idx, url) {
+        var short = url.length > 70 ? url.slice(0, 70) + '…' : url;
+        return '<div class="p-2 rounded" id="reels-item-' + idx + '" style="background:rgba(255,255,255,.04)">'
+            + '<div class="d-flex align-items-center gap-2 mb-1">'
+            + '<span class="badge bg-secondary" id="reels-badge-' + idx + '" style="min-width:52px">排队中</span>'
+            + '<small class="text-muted text-truncate flex-grow-1" title="' + escHtml(url) + '">' + escHtml(short) + '</small>'
+            + '<small class="text-nowrap text-muted" id="reels-meta-' + idx + '"></small>'
+            + '</div>'
+            + '<div class="progress mb-1" style="height:4px">'
+            + '<div class="progress-bar progress-bar-striped progress-bar-animated" id="reels-bar-' + idx + '" style="width:0%"></div>'
+            + '</div>'
+            + '<small class="text-muted d-block text-truncate" id="reels-detail-' + idx + '"></small>'
+            + '</div>';
+    }
+
+    if (el('btn-paste-reels')) {
+        el('btn-paste-reels').addEventListener('click', function () {
+            if (!navigator.clipboard) { alert('浏览器不支持自动读取剪贴板，请手动粘贴 (Ctrl+V)'); return; }
+            navigator.clipboard.readText().then(function (text) {
+                var ta = el('reels-url-input');
+                var cur = ta.value.trimEnd();
+                ta.value = cur ? cur + '\n' + text.trim() : text.trim();
+            }).catch(function () { alert('剪贴板访问被拒绝，请手动粘贴 (Ctrl+V)'); });
+        });
+    }
+
+    if (el('btn-browse-reels-dir')) {
+        el('btn-browse-reels-dir').addEventListener('click', function () { browsePath('reels-output-dir', 'dir'); });
+    }
+
+    if (el('btn-clear-reels')) {
+        el('btn-clear-reels').addEventListener('click', function () {
+            el('reels-url-input').value = '';
+            el('reels-progress-list').innerHTML = '';
+            el('reels-footer-text').textContent = '';
+        });
+    }
+
+    if (el('btn-start-reels')) {
+        el('btn-start-reels').addEventListener('click', function () {
+            var raw = (el('reels-url-input').value || '').trim();
+            if (!raw) { alert('请输入至少一个 URL'); return; }
+            var urls = raw.split('\n')
+                .map(function (u) { return u.trim(); })
+                .filter(function (u) { return u.startsWith('http://') || u.startsWith('https://'); });
+            if (!urls.length) { alert('未检测到有效的 HTTP/HTTPS 链接'); return; }
+            var outputDir = (el('reels-output-dir').value || '').trim();
+            var list = el('reels-progress-list');
+            list.innerHTML = '';
+            urls.forEach(function (u, i) { list.innerHTML += reelsItemHtml(i, u); });
+            el('reels-footer-text').textContent = '正在下载 ' + urls.length + ' 个视频…';
+            el('btn-start-reels').disabled = true;
+            socket.emit('start_reels_download', { urls: urls, output_dir: outputDir });
+        });
+    }
+
+    socket.on('reels_progress', function (d) {
+        var i = d.index;
+        var badge = el('reels-badge-' + i);
+        var bar = el('reels-bar-' + i);
+        var meta = el('reels-meta-' + i);
+        var detail = el('reels-detail-' + i);
+        if (d.status === 'start') {
+            if (badge) { badge.textContent = '下载中'; badge.className = 'badge bg-primary'; }
+        } else if (d.status === 'downloading') {
+            var pct = d.percent || 0;
+            if (bar) bar.style.width = pct + '%';
+            var metaStr = pct + '%';
+            if (d.speed) metaStr += '  ' + d.speed;
+            if (d.eta) metaStr += '  ETA ' + d.eta;
+            if (meta) meta.textContent = metaStr;
+            if (d.total_mb) {
+                if (detail) detail.textContent = (d.downloaded_mb || 0) + ' / ' + d.total_mb + ' MB';
+            }
+        } else if (d.status === 'finished') {
+            if (badge) { badge.textContent = '完成'; badge.className = 'badge bg-success'; }
+            if (bar) { bar.style.width = '100%'; bar.classList.remove('progress-bar-animated', 'progress-bar-striped'); bar.classList.add('bg-success'); }
+            if (meta) meta.textContent = '';
+            if (detail && d.filename) detail.textContent = d.filename;
+        } else if (d.status === 'error') {
+            if (badge) { badge.textContent = '失败'; badge.className = 'badge bg-danger'; }
+            if (bar) { bar.style.width = '100%'; bar.classList.remove('progress-bar-animated', 'progress-bar-striped'); bar.classList.add('bg-danger'); }
+            if (detail) detail.textContent = '错误: ' + (d.msg || '未知错误');
+            if (meta) meta.textContent = '';
+        }
+    });
+
+    socket.on('reels_done', function (d) {
+        var footerEl = el('reels-footer-text');
+        if (footerEl) footerEl.textContent = '全部完成！共 ' + d.total + ' 个，保存至：' + d.output_dir;
+        var btn = el('btn-start-reels'); if (btn) btn.disabled = false;
+    });
+
+    socket.on('reels_error', function (d) {
+        var footerEl = el('reels-footer-text');
+        if (footerEl) footerEl.textContent = '错误：' + d.msg;
+        var btn = el('btn-start-reels'); if (btn) btn.disabled = false;
+    });
+
     // ============ Init ============
     restoreFromLocal();
 });

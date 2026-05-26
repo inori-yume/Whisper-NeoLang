@@ -1,15 +1,26 @@
 # 本地模型权重（体积过大，不纳入版本控制）
-faster-whisper-large-v3/
-faster-whisper-medium/
-faster-whisper-small/
-HY-MT1.5-7B-GPTQ-Int4/
+models/
 
 # 运行时产物
 transcription.json
 final_chinese_subtitles.srt
+*.srt
 *.mp3
 *.mp4
 *.wav
+
+# 用户配置（含 API Key，不入库）
+web_config.json
+
+# Reels 下载目录
+reels_downloads/
+
+# PyInstaller 临时构建文件（产物 start.exe 入库）
+build/
+build_exe.ps1
+*.spec
+launcher.py
+logo.ico
 
 # Python 虚拟环境
 .venv/
