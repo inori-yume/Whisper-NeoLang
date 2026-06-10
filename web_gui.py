@@ -6,7 +6,7 @@ import sys
 import json
 import webbrowser
 from threading import Thread, Lock
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO
 
 # --- 环境配置与动态加载 ---
@@ -71,6 +71,33 @@ _DOWNLOADABLE_WHISPER_MODELS = [
 ]
 _downloading_models = set()  # 正在下载的模型名集合
 
+# --- 预设的硅基流动模型列表（当API不可用时使用）---
+_PRESET_MODELS = [
+    # 混元模型（优先）
+    {'id': 'Tencent-Hunyuan/Hunyuan-2.0-Instruct', 'name': '混元2.0 Instruct', 'preset': True, 'description': '混元2.0指令模型'},
+    {'id': 'Tencent-Hunyuan/Hunyuan-2.0', 'name': '混元2.0', 'preset': True, 'description': '混元2.0基础模型'},
+    {'id': 'Tencent-Hunyuan/Hunyuan-7B-Instruct', 'name': '混元7B Instruct', 'preset': True, 'description': '混元7B指令模型'},
+    {'id': 'Tencent-Hunyuan/Hunyuan-7B', 'name': '混元7B', 'preset': True, 'description': '混元7B基础模型'},
+    {'id': 'tencent/Hunyuan-MT-7B', 'name': '混元机器翻译7B', 'preset': True, 'description': '混元专用翻译模型（免费）'},
+    {'id': 'tencent/Hunyuan-A13B-Instruct', 'name': '混元A13B Instruct', 'preset': True, 'description': '混元A13B指令模型'},
+    
+    # Qwen模型
+    {'id': 'Qwen/Qwen2.5-7B-Instruct', 'name': 'Qwen2.5 7B Instruct', 'preset': True, 'description': '通义千问2.5 7B'},
+    {'id': 'Qwen/Qwen2.5-14B-Instruct', 'name': 'Qwen2.5 14B Instruct', 'preset': True, 'description': '通义千问2.5 14B'},
+    {'id': 'Qwen/Qwen2.5-32B-Instruct', 'name': 'Qwen2.5 32B Instruct', 'preset': True, 'description': '通义千问2.5 32B'},
+    {'id': 'Qwen/Qwen2.5-72B-Instruct', 'name': 'Qwen2.5 72B Instruct', 'preset': True, 'description': '通义千问2.5 72B'},
+    
+    # DeepSeek模型
+    {'id': 'deepseek-ai/DeepSeek-V2.5', 'name': 'DeepSeek V2.5', 'preset': True, 'description': 'DeepSeek V2.5'},
+    {'id': 'deepseek-ai/DeepSeek-V2', 'name': 'DeepSeek V2', 'preset': True, 'description': 'DeepSeek V2'},
+    {'id': 'deepseek-ai/DeepSeek-V3', 'name': 'DeepSeek V3', 'preset': True, 'description': 'DeepSeek V3'},
+    
+    # Llama模型
+    {'id': 'meta-llama/Llama-3.3-70B-Instruct', 'name': 'Llama 3.3 70B Instruct', 'preset': True, 'description': 'Meta Llama 3.3'},
+    {'id': 'meta-llama/Llama-3.1-8B-Instruct', 'name': 'Llama 3.1 8B Instruct', 'preset': True, 'description': 'Meta Llama 3.1'},
+    {'id': 'meta-llama/Llama-3.1-70B-Instruct', 'name': 'Llama 3.1 70B Instruct', 'preset': True, 'description': 'Meta Llama 3.1'},
+]
+
 # --- SocketIO 事件处理 ---
 @socketio.on('connect')
 def handle_connect():
@@ -78,26 +105,38 @@ def handle_connect():
 
 @socketio.on('get_initial_config')
 def get_initial_config():
-    config = _load_config()
-    translate_cfg = _load_translate_config()
+    config = _load_config()  # 读取 web_config.json
+    translate_cfg = _load_translate_config()  # 读取 translate_config.json
+    
     config.setdefault('language', _DEFAULT_LANGUAGE)
     config['terminology'] = translate_cfg.get('terminology', _DEFAULT_TERMINOLOGY)
     config['prompt_template'] = translate_cfg.get('prompt_template', _DEFAULT_PROMPT_TEMPLATE)
     config.setdefault('whisper_device', 'cuda')
     config.setdefault('translate_mode', 'local')
     config.setdefault('siliconflow_api_key', '')
-    config.setdefault('siliconflow_model', 'Qwen/Qwen2.5-7B-Instruct')
+    config.setdefault('siliconflow_model', 'tencent/Hunyuan-MT-7B')
     socketio.emit('initial_config', config)
 
+# 在 save_settings 函数中，添加对自定义模型来源的支持
 @socketio.on('save_settings')
 def save_settings(data):
     """保存语言、Whisper 设备、翻译模式及 API 配置到 web_config.json，术语表和 Prompt 保存到 translate_config.json。"""
     try:
         web_fields = {k: v for k, v in data.items()
                       if k in ('language', 'whisper_device', 'translate_mode',
-                               'siliconflow_api_key', 'siliconflow_model')}
+                               'siliconflow_api_key', 'siliconflow_model', 
+                               'siliconflow_model_source')}  # 新增 model_source
         if web_fields:
             _save_config(web_fields)
+            
+            # 如果API Key或模型有变化，异步验证模型可用性
+            if 'siliconflow_api_key' in web_fields or 'siliconflow_model' in web_fields:
+                Thread(target=_verify_model_availability, 
+                       args=(web_fields.get('siliconflow_api_key', 
+                             _load_config().get('siliconflow_api_key', '')),
+                             web_fields.get('siliconflow_model',
+                             _load_config().get('siliconflow_model', '')))).start()
+        
         translate_fields = {k: v for k, v in data.items() if k in ('terminology', 'prompt_template')}
         if translate_fields:
             _save_translate_config(translate_fields)
@@ -181,6 +220,113 @@ def direct_translate(data):
         emit_error("请设置混元翻译模型路径或切换为 API 翻译模式。")
         return
     Thread(target=_direct_translate_worker, args=(text, paths)).start()
+
+# --- 新增：刷新硅基流动模型列表 ---
+@socketio.on('refresh_siliconflow_models')
+def handle_refresh_models(data):
+    """刷新硅基流动模型列表"""
+    api_key = data.get('api_key', '')
+    
+    if not api_key:
+        config = _load_config()
+        api_key = config.get('siliconflow_api_key', '')
+    
+    if not api_key:
+        socketio.emit('siliconflow_models_updated', {
+            'models': _PRESET_MODELS, 
+            'preset': True,
+            'error': '请先在设置中配置API Key，当前显示预设模型'
+        })
+        return
+    
+    try:
+        import requests
+        
+        response = requests.get(
+            "https://api.siliconflow.cn/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            models = []
+            
+            if 'data' in data:
+                for model in data['data']:
+                    model_id = model.get('id', '')
+                    # 过滤出适合翻译的模型
+                    if any(keyword in model_id.lower() for keyword in 
+                          ['chat', 'instruct', 'qwen', 'llama', 'deepseek', 'hunyuan']):
+                        models.append({
+                            'id': model_id,
+                            'name': model_id,
+                            'owned_by': model.get('owned_by', ''),
+                            'description': model.get('description', '')
+                        })
+            
+            # 混元优先排序
+            def sort_priority(m):
+                mid = m['id'].lower()
+                if 'hunyuan' in mid:
+                    return (0, mid)
+                elif 'qwen' in mid:
+                    return (1, mid)
+                elif 'deepseek' in mid:
+                    return (2, mid)
+                elif 'llama' in mid:
+                    return (3, mid)
+                else:
+                    return (4, mid)
+            
+            models.sort(key=sort_priority)
+            
+            socketio.emit('siliconflow_models_updated', {
+                'models': models,
+                'preset': False,
+                'success': True,
+                'count': len(models)
+            })
+        else:
+            socketio.emit('siliconflow_models_updated', {
+                'models': _PRESET_MODELS,
+                'preset': True,
+                'error': f'API请求失败: HTTP {response.status_code}，使用预设模型'
+            })
+            
+    except Exception as e:
+        socketio.emit('siliconflow_models_updated', {
+            'models': _PRESET_MODELS,
+            'preset': True,
+            'error': f'获取失败: {str(e)}，使用预设模型'
+        })
+
+# --- 新增：模型验证函数 ---
+def _verify_model_availability(api_key, model_id):
+    """验证模型是否可用"""
+    if not api_key or not model_id:
+        return
+    try:
+        import requests
+        # 发送一个简单的测试请求
+        response = requests.post(
+            "https://api.siliconflow.cn/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json={
+                "model": model_id,
+                "messages": [{"role": "user", "content": "test"}],
+                "max_tokens": 1
+            },
+            timeout=5
+        )
+        if response.status_code == 200:
+            socketio.emit('model_verified', {'model': model_id, 'available': True})
+        else:
+            socketio.emit('model_verified', {'model': model_id, 'available': False, 
+                                           'error': f'HTTP {response.status_code}'})
+    except Exception as e:
+        socketio.emit('model_verified', {'model': model_id, 'available': False, 
+                                       'error': str(e)})
 
 # --- 工具函数 ---
 def emit_log(msg):
@@ -497,6 +643,72 @@ def list_whisper_models():
     except Exception:
         pass
     return {'models': found}
+
+@app.route('/get_preset_models')
+def get_preset_models():
+    """返回预设模型列表"""
+    return jsonify({'models': _PRESET_MODELS})
+
+@app.route('/list_siliconflow_models')
+def list_siliconflow_models():
+    """获取硅基流动可用的模型列表"""
+    api_key = request.args.get('api_key', '')
+    
+    if not api_key:
+        config = _load_config()
+        api_key = config.get('siliconflow_api_key', '')
+    
+    if not api_key:
+        return jsonify({'models': _PRESET_MODELS, 'preset': True, 'error': '未配置API Key，显示预设模型'})
+    
+    try:
+        import requests
+        
+        response = requests.get(
+            "https://api.siliconflow.cn/v1/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            models = []
+            
+            if 'data' in data:
+                for model in data['data']:
+                    model_id = model.get('id', '')
+                    # 过滤出适合翻译的模型
+                    if any(keyword in model_id.lower() for keyword in 
+                          ['chat', 'instruct', 'qwen', 'llama', 'deepseek', 'hunyuan']):
+                        models.append({
+                            'id': model_id,
+                            'name': model_id,
+                            'owned_by': model.get('owned_by', '')
+                        })
+            
+            # 混元优先排序
+            def sort_priority(m):
+                mid = m['id'].lower()
+                if 'hunyuan' in mid:
+                    return (0, mid)
+                elif 'qwen' in mid:
+                    return (1, mid)
+                elif 'deepseek' in mid:
+                    return (2, mid)
+                elif 'llama' in mid:
+                    return (3, mid)
+                else:
+                    return (4, mid)
+            
+            models.sort(key=sort_priority)
+            
+            return jsonify({'models': models, 'preset': False, 'success': True})
+        else:
+            return jsonify({'models': _PRESET_MODELS, 'preset': True, 
+                          'error': f'API请求失败: {response.status_code}'})
+            
+    except Exception as e:
+        return jsonify({'models': _PRESET_MODELS, 'preset': True, 'error': str(e)})
 
 @app.route('/env_check')
 def env_check():
@@ -946,9 +1158,9 @@ def _update_worker(do_pull: bool, sid: str):
 
 def run_app():
     # 在新线程中打开浏览器，避免阻塞
-    Thread(target=lambda: webbrowser.open_new("http://127.0.0.1:5000")).start()
+    Thread(target=lambda: webbrowser.open_new("http://127.0.0.1:5005")).start()
     # use_reloader=False: 禁止 werkzeug 文件监视器，防止动态 import 大型库时触发进程重启
-    socketio.run(app, host='127.0.0.1', port=5000, allow_unsafe_werkzeug=True, use_reloader=False)
+    socketio.run(app, host='127.0.0.1', port=5005, allow_unsafe_werkzeug=True, use_reloader=False)
 
 if __name__ == '__main__':
     run_app()

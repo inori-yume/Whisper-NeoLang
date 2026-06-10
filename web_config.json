@@ -14,7 +14,7 @@
     },
     {
       "source": "Save",
-      "target": "保枪"
+      "target": "\u4fdd\u67aa"
     },
     {
       "source": "Major",
@@ -22,7 +22,7 @@
     },
     {
       "source": "Site",
-      "target": "包点"
+      "target": "\u5305\u70b9"
     },
     {
       "source": "CT",
@@ -46,15 +46,15 @@
     },
     {
       "source": "Molotov",
-      "target": "火"
+      "target": "\u706b"
     },
     {
       "source": "Flash",
-      "target": "闪光"
+      "target": "\u95ea\u5149"
     },
     {
       "source": "Smoke",
-      "target": "烟"
+      "target": "\u70df"
     },
     {
       "source": "Nuke",
@@ -62,11 +62,11 @@
     },
     {
       "source": "Dust2",
-      "target": "沙二"
+      "target": "\u6c99\u4e8c"
     },
     {
       "source": "Inferno",
-      "target": "炼狱小镇"
+      "target": "\u70bc\u72f1\u5c0f\u9547"
     },
     {
       "source": "Mirage",
@@ -76,5 +76,6 @@
   "translate_mode": "api",
   "whisper_device": "cuda",
   "siliconflow_api_key": "sk-nltjtbecttnyvzzlfrqpxaoyezkguwlsojgqhofnbmicprhf",
-  "siliconflow_model": "tencent/Hunyuan-MT-7B"
+  "siliconflow_model": "nex-agi/Nex-N2-Pro",
+  "siliconflow_model_source": "custom"
 }
