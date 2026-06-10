@@ -1,6 +1,6 @@
-﻿# Whisper-HY-tool
+﻿# Whisper-NeoLang-tool
 
-基于 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) 进行语音识别，再通过本地 [混元 MT 模型](https://huggingface.co/Tencent-Hunyuan/HY-MT1.5-7B-GPTQ-Int4) 或 [硅基流动 API](https://cloud.siliconflow.cn) 进行翻译，最终输出中文 SRT 字幕文件的本地全离线工具。
+基于 [faster-whisper](https://github.com/SYSTRAN/faster-whisper) 进行语音识别，再通过本地 [混元 MT 模型](https://huggingface.co/Tencent-Hunyuan/HY-MT1.5-7B-GPTQ-Int4) 或 [硅基流动 API](https://cloud.siliconflow.cn) 多种模型进行翻译，最终输出目标语言 SRT 字幕文件的本地全离线工具。
 
 当前项目同时提供：
 
@@ -19,7 +19,7 @@
     - `models/HY-MT1.5-7B-GPTQ-Int4`(可选)
 2. 双击运行 `start.exe`（首次会自动创建 `.venv` 并安装依赖，时间较长属正常）。
 3. 浏览器打开后，先点击页面里的「环境自检」，确认 `torch.cuda`、`GPTQModel(可选)`、模型状态均为正常。
-4. 在「语音识别」里选择音频开始识别，再到「翻译」里生成中文字幕 `xxx.srt`。
+4. 在「语音识别」里选择音频开始识别，再到「翻译」里生成字幕 `xxx.srt`。
 
 不使用 `start.exe` 的用户，可改为命令行启动：
 
