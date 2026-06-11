@@ -797,27 +797,108 @@ def env_check():
 
 @app.route('/browse')
 def browse():
-    """在服务端弹出系统原生选择框，将路径返回给前端。"""
-    import tkinter as tk
-    from tkinter import filedialog
-    browse_type = request.args.get('type', 'dir')  # dir | file | json
-    root = tk.Tk()
-    root.withdraw()       # 不显示 Tk 主窗口
-    root.wm_attributes('-topmost', True)  # 对话框置顶
-    if browse_type == 'file':
-        path = filedialog.askopenfilename(
-            title='选择音频文件',
-            filetypes=[('音频文件', '*.mp3 *.wav *.m4a *.flac *.aac'), ('所有文件', '*.*')],
-        )
-    elif browse_type == 'json':
-        path = filedialog.askopenfilename(
-            title='选择识别结果 JSON 文件',
-            filetypes=[('JSON 文件', '*.json'), ('所有文件', '*.*')],
-        )
-    else:
-        path = filedialog.askdirectory(title='选择文件夹')
-    root.destroy()
-    return {'path': path or ''}
+    """文件/文件夹选择器 - 支持多种方式，带详细调试"""
+    import traceback
+    import sys
+    import os
+    
+    browse_type = request.args.get('type', 'dir')
+    print(f"[DEBUG 1/6] 收到请求, type={browse_type}")
+    
+    # 方式1: pywin32 (最推荐)
+    try:
+        print("[DEBUG 2/6] 尝试使用 pywin32...")
+        import win32ui
+        import win32con
+        import win32gui
+        
+        if browse_type in ('file', 'json'):
+            print("[DEBUG 3/6] 打开文件选择对话框...")
+            # 修改：不限制文件类型，显示所有文件
+            filter_str = '所有文件 (*.*)\0*.*\0||'
+            
+            dlg = win32ui.CreateFileDialog(1, None, None, 0, filter_str)
+            dlg.SetOFNInitialDir(os.path.expanduser('~'))
+            
+            if dlg.DoModal() == win32con.IDOK:
+                path = dlg.GetPathName()
+                print(f"[DEBUG 4/6] pywin32 选择成功: {path}")
+                return {'path': path}
+            else:
+                print("[DEBUG 4/6] 用户取消选择")
+                return {'path': ''}
+        else:
+            print("[DEBUG 3/6] 打开文件夹选择对话框...")
+            pidl = win32gui.SHBrowseForFolder(
+                0, None, '请选择文件夹', 0, None, None
+            )
+            if pidl:
+                path = win32gui.SHGetPathFromIDList(pidl)
+                print(f"[DEBUG 4/6] pywin32 选择成功: {path}")
+                return {'path': path}
+            else:
+                print("[DEBUG 4/6] 用户取消选择")
+                return {'path': ''}
+                
+    except ImportError as e:
+        print(f"[DEBUG 2/6] pywin32 未安装: {e}")
+    except Exception as e:
+        print(f"[DEBUG 2/6] pywin32 异常: {e}")
+        traceback.print_exc()
+    
+    # 方式2: tkinter (降级方案)
+    try:
+        print("[DEBUG 3/6] 尝试使用 tkinter...")
+        import tkinter as tk
+        from tkinter import filedialog
+        
+        print("[DEBUG 4/6] 创建 Tk 根窗口...")
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        root.update()
+        print("[DEBUG 5/6] Tk 窗口创建成功")
+        
+        if browse_type == 'file':
+            print("[DEBUG 6/6] 弹出文件选择框...")
+            # 修改：不限制文件类型
+            path = filedialog.askopenfilename(
+                title='选择文件',
+                filetypes=[('所有文件', '*.*')]
+            )
+        elif browse_type == 'json':
+            print("[DEBUG 6/6] 弹出 JSON 选择框...")
+            # 修改：JSON 选择也不限制（虽然 JSON 会有过滤器，但保留 .json 作为默认视图）
+            path = filedialog.askopenfilename(
+                title='选择 JSON 文件',
+                filetypes=[('JSON 文件', '*.json'), ('所有文件', '*.*')]
+            )
+        else:
+            print("[DEBUG 6/6] 弹出文件夹选择框...")
+            path = filedialog.askdirectory(title='选择文件夹')
+        
+        print(f"[DEBUG 6/6] 用户选择: {path}")
+        root.destroy()
+        return {'path': path or ''}
+        
+    except Exception as e:
+        print(f"[DEBUG 3/6] tkinter 异常: {e}")
+        traceback.print_exc()
+    
+    # 方式3: 手动输入降级
+    try:
+        print("[DEBUG 4/6] 所有自动方式都失败了，使用手动输入...")
+        print("=" * 50)
+        print("无法弹出文件选择窗口，请手动输入路径：")
+        path = input("请输入完整路径: ").strip()
+        print("=" * 50)
+        return {'path': path}
+    except Exception as e:
+        print(f"[DEBUG 4/6] 手动输入异常: {e}")
+        traceback.print_exc()
+    
+    print("[ERROR] 所有选择方式都失败了")
+    return {'path': '', 'error': '无法打开文件选择器'}
 
 @app.route('/list_downloadable_models')
 def list_downloadable_models():
